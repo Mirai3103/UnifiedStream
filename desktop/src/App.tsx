@@ -4,6 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import {
   AudioLevel,
+  CameraStats,
+  CameraStatus,
   ConnectionState,
   EVENTS,
   MicStatus,
@@ -16,11 +18,6 @@ import {
   describeState,
 } from "./types";
 
-/** Features that exist in the UI but have no implementation behind them yet. */
-const PLANNED_FEATURES = [
-  { id: "cam", label: "Camera", hint: "Phone camera as a webcam" },
-] as const;
-
 const IDLE_SPEAKER: SpeakerStatus = {
   active: false,
   starting: false,
@@ -28,6 +25,14 @@ const IDLE_SPEAKER: SpeakerStatus = {
   routed: false,
   error: null,
   params: null,
+};
+
+const IDLE_CAMERA: CameraStatus = {
+  active: false,
+  error: null,
+  hint: null,
+  params: null,
+  device: null,
 };
 
 function App() {
@@ -53,6 +58,10 @@ function App() {
     rms: 0,
     peak: 0,
   });
+  const [camera, setCamera] = useState<CameraStatus>(IDLE_CAMERA);
+  const [cameraStats, setCameraStats] = useState<CameraStats | null>(null);
+  // True between asking the phone for the camera and hearing its answer.
+  const [cameraPending, setCameraPending] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -62,6 +71,7 @@ function App() {
       setTestRunning(snapshot.test_stream_running);
       setMic(snapshot.mic);
       setSpeaker(snapshot.speaker);
+      setCamera(snapshot.camera);
     } catch (e) {
       setError(String(e));
     }
@@ -83,6 +93,9 @@ function App() {
           setMicPending(false);
           setSpeaker(IDLE_SPEAKER);
           setSpeakerLevel({ rms: 0, peak: 0 });
+          setCamera(IDLE_CAMERA);
+          setCameraStats(null);
+          setCameraPending(false);
         }
       }),
       listen<PairingRequest>(EVENTS.pairingRequest, (event) =>
@@ -106,6 +119,14 @@ function App() {
       }),
       listen<AudioLevel>(EVENTS.speakerLevel, (event) =>
         setSpeakerLevel(event.payload),
+      ),
+      listen<CameraStatus>(EVENTS.cameraStatus, (event) => {
+        setCamera(event.payload);
+        setCameraPending(false);
+        if (!event.payload.active) setCameraStats(null);
+      }),
+      listen<CameraStats>(EVENTS.cameraStats, (event) =>
+        setCameraStats(event.payload),
       ),
     ];
 
@@ -154,6 +175,20 @@ function App() {
       window.setTimeout(() => setMicPending(false), 6000);
     } catch (e) {
       setMicPending(false);
+      setError(String(e));
+    }
+  };
+
+  const toggleCamera = async () => {
+    setCameraPending(true);
+    setCamera((current) => ({ ...current, error: null, hint: null }));
+    try {
+      await invoke("set_camera_enabled", { enabled: !camera.active });
+      // The answer arrives via the camera-status event; if the phone never replies,
+      // stop showing a spinner after its ack timeout would have fired.
+      window.setTimeout(() => setCameraPending(false), 6000);
+    } catch (e) {
+      setCameraPending(false);
       setError(String(e));
     }
   };
@@ -506,25 +541,74 @@ function App() {
 
       <section className="glass panel">
         <div className="panel-head">
-          <h2>Streams</h2>
+          <h2>Camera</h2>
+          <span className={`dot dot-${camera.active ? "on" : "off"}`} />
         </div>
+
         <div className="features">
-          {PLANNED_FEATURES.map((feature) => (
-            <div className="feature" key={feature.id}>
-              <div>
-                <div className="feature-label">{feature.label}</div>
-                <div className="muted small">{feature.hint}</div>
+          <div className="feature">
+            <div>
+              <div className="feature-label">Phone camera</div>
+              <div className="muted small">
+                {camera.active
+                  ? `Live — "UnifiedStream Camera" is available as a webcam${
+                      camera.device ? ` on ${camera.device}` : ""
+                    }${
+                      camera.params
+                        ? ` (${camera.params.width}x${camera.params.height}, up to ${camera.params.max_fps} fps)`
+                        : ""
+                    }`
+                  : cameraPending
+                    ? "Waiting for the phone…"
+                    : "Ask the phone to stream its camera as this PC's webcam"}
               </div>
-              <label className="toggle" title="Not available yet">
-                <input type="checkbox" disabled checked={false} readOnly />
-                <span className="slider" />
-              </label>
             </div>
-          ))}
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={camera.active}
+                disabled={!connected || cameraPending}
+                onChange={() => void toggleCamera()}
+              />
+              <span className="slider" />
+            </label>
+          </div>
         </div>
-        <p className="muted small">
-          The camera arrives in a later change.
-        </p>
+
+        {camera.active && (
+          <dl className="grid metrics">
+            <div>
+              <dt>Delivered</dt>
+              {/* 0 fps with the stream active means stalled, not stopped. */}
+              <dd>{`${cameraStats?.fps ?? 0} fps`}</dd>
+            </div>
+            <div>
+              <dt>Frames</dt>
+              <dd>{cameraStats?.frames_written ?? 0}</dd>
+            </div>
+            <div>
+              <dt>Undecodable</dt>
+              <dd>{cameraStats?.decode_failures ?? 0}</dd>
+            </div>
+          </dl>
+        )}
+
+        {camera.error && (
+          <p className="muted small error-text" role="alert">
+            {camera.error}
+          </p>
+        )}
+
+        {camera.hint && (
+          <div className="row">
+            <code className="mono small">{camera.hint}</code>
+            <button
+              onClick={() => void navigator.clipboard.writeText(camera.hint ?? "")}
+            >
+              Copy
+            </button>
+          </div>
+        )}
       </section>
     </main>
   );

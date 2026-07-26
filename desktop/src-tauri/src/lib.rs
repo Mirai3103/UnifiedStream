@@ -75,6 +75,7 @@ pub fn run() {
             app::start_test_stream,
             app::stop_test_stream,
             app::set_mic_enabled,
+            app::set_camera_enabled,
             app::set_speaker_enabled,
             app::set_speaker_muted,
             app::set_speaker_routing,

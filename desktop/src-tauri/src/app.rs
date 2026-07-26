@@ -19,7 +19,8 @@ use unifiedstream_net::control::{
 };
 use unifiedstream_net::discovery::{AdvertiseConfig, Advertiser, DeviceIdentity};
 use unifiedstream_net::protocol::{
-    caps, AudioCodec, AudioParams, StreamId, StreamRefusal, TelemetryReport,
+    caps, AudioCodec, AudioParams, StreamId, StreamParams, StreamRefusal, TelemetryReport,
+    VideoCodec, VideoParams,
 };
 use unifiedstream_net::session::ConnectionState;
 use unifiedstream_net::telemetry::{LinkQuality, TelemetryCollector, REPORT_INTERVAL};
@@ -28,6 +29,7 @@ use unifiedstream_net::transport::{
     TestStreamReport, TestStreamVerifier, MAX_DATAGRAM,
 };
 use unifiedstream_net::{DEFAULT_CONTROL_PORT, DEFAULT_MEDIA_PORT};
+use unifiedstream_video::{V4l2LoopbackSink, VideoFormat, VideoSink, MODPROBE_HINT};
 
 /// Event names emitted to the webview. Kept in one place so the TypeScript side has a single
 /// list to mirror.
@@ -48,6 +50,10 @@ pub mod events {
     pub const SPEAKER_STATUS: &str = "speaker-status";
     /// Live speaker level, ~15 Hz while audio flows.
     pub const SPEAKER_LEVEL: &str = "speaker-level";
+    /// Camera sink status changed.
+    pub const CAMERA_STATUS: &str = "camera-status";
+    /// Delivered-frame counters, 1 Hz while the camera stream is active.
+    pub const CAMERA_STATS: &str = "camera-stats";
 }
 
 /// Errors surfaced to the webview.
@@ -119,6 +125,47 @@ struct MicSink {
     status: MicStatus,
 }
 
+/// Camera sink status, as the UI renders it.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CameraStatus {
+    /// Whether the virtual camera device is attached and video may flow.
+    pub active: bool,
+    /// Why the camera is unavailable, when it is.
+    pub error: Option<String>,
+    /// The command that fixes a missing v4l2loopback module. Present exactly when the last
+    /// failure was the module being absent, so the UI can offer it copyable.
+    pub hint: Option<String>,
+    /// Negotiated stream parameters while active.
+    pub params: Option<VideoParams>,
+    /// Device node the virtual camera writes to, e.g. `/dev/video10`.
+    pub device: Option<String>,
+}
+
+/// Delivered-frame counters emitted at 1 Hz while the camera stream is active.
+///
+/// The UI derives its fps figure from `frames_written` advancing, so a stalled stream reads
+/// as 0 fps — visibly distinct from a stopped one.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct CameraStats {
+    /// Frames decoded and written to the device since the stream started.
+    pub frames_written: u64,
+    /// Frames dropped because they failed to decode.
+    pub decode_failures: u64,
+    /// Frames written over the last second.
+    pub fps: u32,
+}
+
+/// The camera sink and its bookkeeping. Mirrors [`MicSink`]: the desktop is the stream sink.
+#[derive(Default)]
+struct CameraSink {
+    /// The v4l2loopback writer while a camera stream is accepted.
+    sink: Option<V4l2LoopbackSink>,
+    /// Emits [`CameraStats`] at 1 Hz while the stream is active.
+    stats_task: Option<tauri::async_runtime::JoinHandle<()>>,
+    /// What the UI shows.
+    status: CameraStatus,
+}
+
 /// Speaker stream status, as the UI renders it.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct SpeakerStatus {
@@ -185,6 +232,8 @@ pub struct StatusSnapshot {
     pub mic: MicStatus,
     /// Speaker stream status.
     pub speaker: SpeakerStatus,
+    /// Camera sink status.
+    pub camera: CameraStatus,
 }
 
 /// Knobs for the synthetic test stream, as sent from the UI.
@@ -226,6 +275,8 @@ pub struct AppState {
     mic: Arc<Mutex<MicSink>>,
     /// Shared with the PipeWire process callback; the receive path pushes decoded frames.
     mic_buffer: Arc<JitterBuffer>,
+
+    camera: Arc<Mutex<CameraSink>>,
 
     speaker: Arc<Mutex<SpeakerSource>>,
     /// Read by the speaker send task on every frame; a mute must not wait on a lock.
@@ -275,6 +326,7 @@ impl AppState {
             test_report: Arc::new(Mutex::new(TestStreamReport::default())),
             mic: Arc::new(Mutex::new(MicSink::default())),
             mic_buffer: Arc::new(JitterBuffer::default()),
+            camera: Arc::new(Mutex::new(CameraSink::default())),
             speaker: Arc::new(Mutex::new(SpeakerSource::default())),
             speaker_muted: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             routing_memo_path: config_dir.join("speaker-routing.json"),
@@ -304,6 +356,7 @@ pub async fn get_status(state: State<'_, Arc<AppState>>) -> AppResult<StatusSnap
         test_stream_running: state.test_stream.lock().await.is_some(),
         mic: state.mic.lock().await.status.clone(),
         speaker: state.speaker.lock().await.status.clone(),
+        camera: state.camera.lock().await.status.clone(),
     })
 }
 
@@ -318,6 +371,18 @@ pub async fn set_mic_enabled(enabled: bool, state: State<'_, Arc<AppState>>) -> 
     control
         .request_stream(StreamId::MICROPHONE, enabled)
         .await?;
+    Ok(())
+}
+
+/// Ask the phone to start or stop its camera, protocol §3.9.4.
+///
+/// Identical in shape to the microphone toggle: the desktop is the sink, so the request is
+/// honoured (or refused) by the phone, and the answer arrives through the camera status event.
+#[tauri::command]
+pub async fn set_camera_enabled(enabled: bool, state: State<'_, Arc<AppState>>) -> AppResult<()> {
+    let control = state.control.lock().await.clone();
+    let control = control.ok_or_else(|| AppError::State("connect a phone first".to_owned()))?;
+    control.request_stream(StreamId::CAMERA, enabled).await?;
     Ok(())
 }
 
@@ -458,6 +523,7 @@ pub async fn stop_advertising(
 
     stop_test_stream_inner(&state).await;
     stop_mic_sink(&app, &state).await;
+    stop_camera_sink(&app, &state).await;
     stop_speaker(&app, &state, false).await;
     if let Some(task) = state.media_task.lock().await.take() {
         task.abort();
@@ -494,6 +560,7 @@ pub async fn disconnect(app: AppHandle, state: State<'_, Arc<AppState>>) -> AppR
     }
     stop_test_stream_inner(&state).await;
     stop_mic_sink(&app, &state).await;
+    stop_camera_sink(&app, &state).await;
     // The session is ending anyway; the implicit stream stop covers the peer's side.
     stop_speaker(&app, &state, false).await;
     state.telemetry.lock().await.reset();
@@ -661,6 +728,8 @@ fn spawn_event_pump(
                 ControlEvent::StreamStopped { stream } => {
                     if stream == StreamId::MICROPHONE.get() {
                         stop_mic_sink(&app, &state).await;
+                    } else if stream == StreamId::CAMERA.get() {
+                        stop_camera_sink(&app, &state).await;
                     } else if stream == StreamId::SPEAKER.get() {
                         // The peer ended it; no `stream_stop` is owed back.
                         stop_speaker(&app, &state, false).await;
@@ -702,14 +771,30 @@ async fn handle_stream_start(
     app: &AppHandle,
     state: &Arc<AppState>,
     stream: u8,
-    params: AudioParams,
+    params: StreamParams,
     respond: oneshot::Sender<std::result::Result<(), StreamRefusal>>,
 ) {
-    if stream != StreamId::MICROPHONE.get() {
-        // The camera capability is advertised but its sink is a later change.
+    if stream == StreamId::MICROPHONE.get() {
+        handle_mic_stream_start(app, state, params, respond).await;
+    } else if stream == StreamId::CAMERA.get() {
+        handle_camera_stream_start(app, state, params, respond).await;
+    } else {
         let _ = respond.send(Err(StreamRefusal::UnsupportedStream));
-        return;
     }
+}
+
+/// Stand up the PipeWire virtual source for a microphone `stream_start`.
+async fn handle_mic_stream_start(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    params: StreamParams,
+    respond: oneshot::Sender<std::result::Result<(), StreamRefusal>>,
+) {
+    let Some(params) = params.as_audio() else {
+        // Video parameters on an audio stream: a format this sink cannot play.
+        let _ = respond.send(Err(StreamRefusal::UnsupportedCodec));
+        return;
+    };
     if params.codec != AudioCodec::PcmS16le {
         // Opus decode is the stretch task; until it lands, PCM is the one codec we play.
         let _ = respond.send(Err(StreamRefusal::UnsupportedCodec));
@@ -811,6 +896,183 @@ async fn send_media_cmd(state: &Arc<AppState>, cmd: MediaCmd) {
 async fn emit_mic_status(app: &AppHandle, state: &Arc<AppState>) {
     let status = state.mic.lock().await.status.clone();
     let _ = app.emit(events::MIC_STATUS, status);
+}
+
+// --- Camera (desktop as stream sink) ---------------------------------------------------------
+
+/// Largest geometry the camera sink accepts.
+///
+/// Ties the offered resolution to the transport's per-frame reassembly cap: 1080p MJPEG
+/// frames stay far below `MAX_FRAME_BYTES`, and nothing bigger has a UI to request it.
+const MAX_CAMERA_PIXELS: u32 = 1920 * 1080;
+
+/// Stand up the v4l2loopback virtual camera for a camera `stream_start`, protocol §7.
+async fn handle_camera_stream_start(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    params: StreamParams,
+    respond: oneshot::Sender<std::result::Result<(), StreamRefusal>>,
+) {
+    let Some(video) = params.as_video() else {
+        // Audio parameters on a video stream: a format this sink cannot present.
+        let _ = respond.send(Err(StreamRefusal::UnsupportedCodec));
+        return;
+    };
+    if video.codec != VideoCodec::Mjpeg {
+        // MJPEG is the mandatory baseline and, until a later change, the only codec decoded.
+        let _ = respond.send(Err(StreamRefusal::UnsupportedCodec));
+        return;
+    }
+    if video.width == 0
+        || video.height == 0
+        || video.width % 2 != 0
+        || video.height % 2 != 0
+        || video.width.saturating_mul(video.height) > MAX_CAMERA_PIXELS
+    {
+        // Odd geometry cannot be 4:2:0 subsampled, and anything past 1080p risks frames the
+        // transport's reassembly cap would refuse mid-stream. Refusing up front is kinder.
+        let _ = respond.send(Err(StreamRefusal::Internal));
+        return;
+    }
+
+    let format = VideoFormat {
+        width: video.width,
+        height: video.height,
+        max_fps: video.max_fps,
+    };
+    let camera = Arc::clone(&state.camera);
+
+    // Device discovery and format negotiation are /dev walks and kernel ioctls; keep them off
+    // the event pump, like the PipeWire paths.
+    let started = tauri::async_runtime::spawn_blocking(move || {
+        let mut sink = V4l2LoopbackSink::new();
+        sink.start(format).map(|()| sink)
+    })
+    .await;
+
+    let mut camera_state = camera.lock().await;
+    match started {
+        Ok(Ok(sink)) => {
+            if let Some(mut old) = camera_state.sink.take() {
+                old.stop();
+            }
+            if let Some(task) = camera_state.stats_task.take() {
+                task.abort();
+            }
+            let device = sink.device_path().map(|p| p.display().to_string());
+            camera_state.sink = Some(sink);
+            camera_state.status = CameraStatus {
+                active: true,
+                error: None,
+                hint: None,
+                params: Some(video),
+                device,
+            };
+            camera_state.stats_task = Some(spawn_camera_stats_task(app.clone(), Arc::clone(state)));
+            drop(camera_state);
+
+            // Accept media for the stream only now that the device is attached.
+            send_media_cmd(state, MediaCmd::Register(StreamId::CAMERA)).await;
+            let _ = respond.send(Ok(()));
+            emit_camera_status(app, state).await;
+        }
+        Ok(Err(e)) => {
+            // The missing-module case gets the exact command to fix it, per the spec.
+            let hint = matches!(e, unifiedstream_video::VideoError::Unavailable(_))
+                .then(|| MODPROBE_HINT.to_owned());
+            camera_state.status = CameraStatus {
+                active: false,
+                error: Some(e.to_string()),
+                hint,
+                params: None,
+                device: None,
+            };
+            drop(camera_state);
+            tracing::warn!(error = %e, "camera sink failed to start");
+            let _ = respond.send(Err(StreamRefusal::Internal));
+            emit_camera_status(app, state).await;
+        }
+        Err(join_error) => {
+            drop(camera_state);
+            tracing::error!(error = %join_error, "camera sink task panicked");
+            let _ = respond.send(Err(StreamRefusal::Internal));
+        }
+    }
+}
+
+/// Emit [`CameraStats`] once per second while the camera stream is active.
+///
+/// Ends itself when the sink goes away, so a stopped stream leaves no ticking task behind.
+fn spawn_camera_stats_task(
+    app: AppHandle,
+    state: Arc<AppState>,
+) -> tauri::async_runtime::JoinHandle<()> {
+    tauri::async_runtime::spawn(async move {
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut last_written: u64 = 0;
+
+        loop {
+            ticker.tick().await;
+            let counters = {
+                let camera = state.camera.lock().await;
+                camera
+                    .sink
+                    .as_ref()
+                    .map(|sink| (sink.frames_written(), sink.decode_failures()))
+            };
+            let Some((written, failures)) = counters else {
+                break;
+            };
+
+            #[allow(clippy::cast_possible_truncation, reason = "fps over one second is tiny")]
+            let fps = written.saturating_sub(last_written).min(1_000) as u32;
+            last_written = written;
+            let _ = app.emit(
+                events::CAMERA_STATS,
+                CameraStats {
+                    frames_written: written,
+                    decode_failures: failures,
+                    fps,
+                },
+            );
+        }
+    })
+}
+
+/// Tear the camera sink down and tell the UI. Idempotent.
+async fn stop_camera_sink(app: &AppHandle, state: &Arc<AppState>) {
+    send_media_cmd(state, MediaCmd::Unregister(StreamId::CAMERA)).await;
+
+    let sink = {
+        let mut camera = state.camera.lock().await;
+        if let Some(task) = camera.stats_task.take() {
+            task.abort();
+        }
+        let had_sink = camera.sink.is_some();
+        camera.status = CameraStatus::default();
+        let sink = camera.sink.take();
+        drop(camera);
+        if !had_sink {
+            return;
+        }
+        sink
+    };
+
+    // stop() joins the device worker; keep the block off the async pump.
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        if let Some(mut sink) = sink {
+            sink.stop();
+        }
+    })
+    .await;
+
+    emit_camera_status(app, state).await;
+}
+
+async fn emit_camera_status(app: &AppHandle, state: &Arc<AppState>) {
+    let status = state.camera.lock().await.status.clone();
+    let _ = app.emit(events::CAMERA_STATUS, status);
 }
 
 // --- Speaker (desktop as stream source) -----------------------------------------------------
@@ -1204,6 +1466,7 @@ pub async fn spawn_media_receiver(app: AppHandle, state: Arc<AppState>, session_
     let telemetry = Arc::clone(&state.telemetry);
     let report = Arc::clone(&state.test_report);
     let mic_buffer = Arc::clone(&state.mic_buffer);
+    let camera = Arc::clone(&state.camera);
 
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel::<MediaCmd>(8);
 
@@ -1233,7 +1496,8 @@ pub async fn spawn_media_receiver(app: AppHandle, state: Arc<AppState>, session_
                         .unwrap_or(StreamId::TEST);
 
                     if let Ok(frames) = demux.accept(datagram) {
-                        for frame in &frames {
+                        let delivered = !frames.is_empty();
+                        for frame in frames {
                             if stream == StreamId::MICROPHONE {
                                 let samples = decode_s16le(&frame.payload);
                                 if let Some(level) = audio_level(&samples) {
@@ -1244,6 +1508,13 @@ pub async fn spawn_media_receiver(app: AppHandle, state: Arc<AppState>, session_
                                     }
                                 }
                                 mic_buffer.push(samples);
+                            } else if stream == StreamId::CAMERA {
+                                // Decode and device writes happen on the sink's worker; this
+                                // only queues, so the receive loop never blocks on video.
+                                let mut camera_sink = camera.lock().await;
+                                if let Some(sink) = camera_sink.sink.as_mut() {
+                                    sink.push_frame(frame.payload);
+                                }
                             } else {
                                 let _ = verifier.verify(&frame.payload);
                             }
@@ -1253,7 +1524,7 @@ pub async fn spawn_media_receiver(app: AppHandle, state: Arc<AppState>, session_
                             .lock()
                             .await
                             .record_packets(stats.received, stats.lost);
-                        if stream == StreamId::TEST && !frames.is_empty() {
+                        if stream == StreamId::TEST && delivered {
                             *report.lock().await = verifier.report();
                         }
                     }

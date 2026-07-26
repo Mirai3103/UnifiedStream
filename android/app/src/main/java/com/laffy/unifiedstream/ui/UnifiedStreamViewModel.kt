@@ -17,10 +17,15 @@ import com.laffy.unifiedstream.discovery.DiscoveredDevice
 import com.laffy.unifiedstream.discovery.DiscoveryState
 import com.laffy.unifiedstream.discovery.ManualAddress
 import com.laffy.unifiedstream.protocol.Caps
+import com.laffy.unifiedstream.protocol.VideoParams
+import com.laffy.unifiedstream.session.CameraStreamState
 import com.laffy.unifiedstream.session.ConnectionState
 import com.laffy.unifiedstream.session.MicStreamState
 import com.laffy.unifiedstream.session.SessionManager
 import com.laffy.unifiedstream.session.SpeakerStreamState
+import com.laffy.unifiedstream.video.CameraCapture
+import com.laffy.unifiedstream.video.CameraFacing
+import com.laffy.unifiedstream.video.CameraResolution
 import com.laffy.unifiedstream.telemetry.LinkQuality
 import com.laffy.unifiedstream.transport.TestStreamConfig
 import com.laffy.unifiedstream.transport.TestStreamReport
@@ -113,6 +118,29 @@ class UnifiedStreamViewModel(application: Application) : AndroidViewModel(applic
     /** True after a denied `RECORD_AUDIO` request, so the UI can explain the dead toggle. */
     val micPermissionNeeded: StateFlow<Boolean> = _micPermissionNeeded.asStateFlow()
 
+    private var cameraCapture: CameraCapture? = null
+    private var previewSurface: androidx.camera.core.Preview.SurfaceProvider? = null
+
+    private val _cameraState = MutableStateFlow<CameraStreamState>(CameraStreamState.Inactive)
+
+    /** Camera stream lifecycle, for the toggle and its error states. */
+    val cameraState: StateFlow<CameraStreamState> = _cameraState.asStateFlow()
+
+    private val _cameraFacing = MutableStateFlow(CameraFacing.BACK)
+
+    /** Which camera is selected. */
+    val cameraFacing: StateFlow<CameraFacing> = _cameraFacing.asStateFlow()
+
+    private val _cameraResolution = MutableStateFlow(CameraResolution.HD)
+
+    /** The resolution the user picked; applied on the next start or via a replacement start. */
+    val cameraResolution: StateFlow<CameraResolution> = _cameraResolution.asStateFlow()
+
+    private val _cameraPermissionNeeded = MutableStateFlow(false)
+
+    /** True after a denied `CAMERA` request, so the UI can explain the dead toggle. */
+    val cameraPermissionNeeded: StateFlow<Boolean> = _cameraPermissionNeeded.asStateFlow()
+
     private var speakerPlayback: SpeakerPlayback? = null
 
     private val _speakerState = MutableStateFlow<SpeakerStreamState>(SpeakerStreamState.Inactive)
@@ -182,6 +210,31 @@ class UnifiedStreamViewModel(application: Application) : AndroidViewModel(applic
                         startSpeakerPlayback(state.params.channels)
                     } else {
                         stopSpeakerPlayback()
+                    }
+                }
+            }
+            launch {
+                manager.cameraState.collect { state ->
+                    _cameraState.value = state
+                    // Capture runs exactly while the stream is accepted, at the accepted
+                    // parameters; a replacement start (resolution change) lands here too.
+                    if (state is CameraStreamState.Active) {
+                        startCameraCapture(state.params)
+                    } else {
+                        stopCameraCapture()
+                    }
+                }
+            }
+            launch {
+                manager.cameraStartRequests.collect {
+                    // The desktop asked for the camera. Honour it only if the permission is
+                    // already granted; otherwise refuse so its toggle does not hang, and
+                    // surface why locally.
+                    if (hasCameraPermission()) {
+                        manager.startCameraStream(cameraParams())
+                    } else {
+                        manager.refuseCameraRequest()
+                        _cameraPermissionNeeded.value = true
                     }
                 }
             }
@@ -294,6 +347,89 @@ class UnifiedStreamViewModel(application: Application) : AndroidViewModel(applic
         micCapture?.applyNoiseSuppression(enabled && micController.noiseSuppressionAvailable)
     }
 
+    // --- Camera ----------------------------------------------------------------------------
+
+    /**
+     * Turn the camera on. Call only with `CAMERA` granted — the Compose layer runs the
+     * permission request and calls [onCameraPermissionDenied] otherwise.
+     */
+    fun enableCamera() {
+        _cameraPermissionNeeded.value = false
+        session?.startCameraStream(cameraParams())
+    }
+
+    /** Turn the camera off. */
+    fun disableCamera() {
+        session?.stopCameraStream()
+    }
+
+    /** Record that the user denied `CAMERA`, so the UI can explain the dead toggle. */
+    fun onCameraPermissionDenied() {
+        _cameraPermissionNeeded.value = true
+    }
+
+    /** Switch between the front and back camera. The stream is untouched. */
+    fun setCameraFacing(facing: CameraFacing) {
+        _cameraFacing.value = facing
+        cameraCapture?.setFacing(facing)
+    }
+
+    /**
+     * Pick a resolution. While streaming this sends a replacement `stream_start` (§3.9.1):
+     * the desktop re-acks and reopens its virtual camera at the new geometry.
+     */
+    fun setCameraResolution(resolution: CameraResolution) {
+        if (_cameraResolution.value == resolution) return
+        _cameraResolution.value = resolution
+        if (_cameraState.value is CameraStreamState.Active) {
+            session?.startCameraStream(cameraParams())
+        }
+    }
+
+    /** Attach or detach the local preview surface. Streaming does not depend on it. */
+    fun setCameraPreview(provider: androidx.camera.core.Preview.SurfaceProvider?) {
+        previewSurface = provider
+        cameraCapture?.setSurfaceProvider(provider)
+    }
+
+    /** Whether `CAMERA` is currently granted. */
+    fun hasCameraPermission(): Boolean = ContextCompat.checkSelfPermission(
+        getApplication(),
+        Manifest.permission.CAMERA,
+    ) == PackageManager.PERMISSION_GRANTED
+
+    private fun cameraParams(): VideoParams {
+        val resolution = _cameraResolution.value
+        return VideoParams(width = resolution.width, height = resolution.height)
+    }
+
+    private fun startCameraCapture(params: VideoParams) {
+        // Each accepted stream generation gets a fresh capture: a replacement start may carry
+        // a new geometry, and reopening on the same one costs only a brief frame gap.
+        stopCameraCapture()
+        val manager = session ?: return
+        val capture = CameraCapture(
+            context = getApplication(),
+            onJpeg = { jpeg -> manager.sendCameraFrame(jpeg) },
+            onFailure = { message -> manager.reportCameraFailure(message) },
+            onActualResolution = { width, height ->
+                // The device lacks the negotiated size and delivered its closest one; a
+                // replacement stream_start moves the whole pipeline to that geometry.
+                manager.startCameraStream(
+                    VideoParams(width = width, height = height, maxFps = params.maxFps),
+                )
+            },
+        )
+        cameraCapture = capture
+        capture.setSurfaceProvider(previewSurface)
+        capture.start(params, _cameraFacing.value)
+    }
+
+    private fun stopCameraCapture() {
+        cameraCapture?.stop()
+        cameraCapture = null
+    }
+
     // --- Speaker ---------------------------------------------------------------------------
 
     /** Ask the PC to start streaming its audio to this phone. */
@@ -389,6 +525,7 @@ class UnifiedStreamViewModel(application: Application) : AndroidViewModel(applic
         super.onCleared()
         discovery.stop()
         stopCapture()
+        stopCameraCapture()
         stopSpeakerPlayback()
         session?.disconnect()
     }

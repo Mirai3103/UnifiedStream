@@ -170,6 +170,42 @@ class ControlMessageTest {
     }
 
     @Test
+    fun aVideoStreamStartShouldRoundTripThroughALine() {
+        val start = ControlMessage.StreamStart(stream = 1, params = VideoParams())
+        assertEquals(start, ControlCodec.fromLine(ControlCodec.toLine(start)))
+    }
+
+    @Test
+    fun aVideoStreamStartShouldSerializeTheDocumentedShape() {
+        val line = ControlCodec.toLine(ControlMessage.StreamStart(stream = 1, params = VideoParams()))
+        assertEquals(
+            """{"type":"stream_start","stream":1,"params":{"codec":"mjpeg","width":1280,"height":720,"max_fps":30}}""",
+            line.trim(),
+        )
+    }
+
+    @Test
+    fun paramsShouldParseAsVideoWhenTheShapeIsVideo() {
+        // The kinds are untagged on the wire; the `width` field is what identifies video.
+        val line =
+            """{"type":"stream_start","stream":1,"params":{"codec":"mjpeg","width":640,"height":480,"max_fps":15}}"""
+        val parsed = ControlCodec.fromLine(line) as ControlMessage.StreamStart
+        val video = parsed.params as VideoParams
+        assertEquals(VideoCodec.MJPEG, video.codec)
+        assertEquals(640, video.width)
+        assertEquals(480, video.height)
+        assertEquals(15, video.maxFps)
+    }
+
+    @Test
+    fun anUnknownVideoCodecShouldParseRatherThanRejectTheLine() {
+        val line =
+            """{"type":"stream_start","stream":1,"params":{"codec":"h264","width":1280,"height":720,"max_fps":30}}"""
+        val parsed = ControlCodec.fromLine(line) as ControlMessage.StreamStart
+        assertEquals(VideoCodec.UNKNOWN, (parsed.params as VideoParams).codec)
+    }
+
+    @Test
     fun anAcceptingStreamAckShouldOmitTheReason() {
         val line = ControlCodec.toLine(ControlMessage.StreamAck(stream = 2, accepted = true))
         assertEquals("""{"type":"stream_ack","stream":2,"accepted":true}""", line.trim())
@@ -203,7 +239,7 @@ class ControlMessageTest {
         val line =
             """{"type":"stream_start","stream":2,"params":{"codec":"flac","sample_rate":48000,"channels":1,"frame_ms":20}}"""
         val parsed = ControlCodec.fromLine(line) as ControlMessage.StreamStart
-        assertEquals(AudioCodec.UNKNOWN, parsed.params.codec)
+        assertEquals(AudioCodec.UNKNOWN, (parsed.params as AudioParams).codec)
     }
 
     @Test
@@ -219,7 +255,7 @@ class ControlMessageTest {
         val line =
             """{"type":"stream_start","stream":2,"params":{"codec":"opus","sample_rate":48000,"channels":1,"frame_ms":20,"bitrate":32000}}"""
         val parsed = ControlCodec.fromLine(line) as ControlMessage.StreamStart
-        assertEquals(AudioCodec.OPUS, parsed.params.codec)
+        assertEquals(AudioCodec.OPUS, (parsed.params as AudioParams).codec)
     }
 
     // --- Interop with real desktop output ---------------------------------------------------
@@ -230,7 +266,9 @@ class ControlMessageTest {
         val expected: Expected,
         val stream_start_mic_pcm: String,
         val stream_start_speaker_pcm: String,
+        val stream_start_camera_mjpeg: String,
         val stream_request_speaker_start: String,
+        val stream_request_camera_start: String,
         val stream_ack_accepted: String,
         val stream_ack_refused: String,
         val stream_stop: String,
@@ -315,8 +353,12 @@ class ControlMessageTest {
                 ControlMessage.StreamStart(stream = 2, params = AudioParams()),
             fixture.stream_start_speaker_pcm to
                 ControlMessage.StreamStart(stream = 3, params = AudioParams(channels = 2)),
+            fixture.stream_start_camera_mjpeg to
+                ControlMessage.StreamStart(stream = 1, params = VideoParams()),
             fixture.stream_request_speaker_start to
                 ControlMessage.StreamRequest(stream = 3, active = true),
+            fixture.stream_request_camera_start to
+                ControlMessage.StreamRequest(stream = 1, active = true),
             fixture.stream_ack_accepted to
                 ControlMessage.StreamAck(stream = 2, accepted = true),
             fixture.stream_ack_refused to

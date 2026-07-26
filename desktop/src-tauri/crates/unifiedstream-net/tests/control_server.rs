@@ -421,7 +421,7 @@ async fn next_stream_stopped(events: &mut tokio::sync::mpsc::Receiver<ControlEve
 fn mic_start() -> ControlMessage {
     ControlMessage::StreamStart {
         stream: 2,
-        params: AudioParams::MICROPHONE_PCM,
+        params: AudioParams::MICROPHONE_PCM.into(),
     }
 }
 

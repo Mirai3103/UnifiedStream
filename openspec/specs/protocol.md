@@ -65,7 +65,7 @@ older receivers rejecting the traffic outright.
 | ID     | Stream            | Direction     | Status                            |
 | ------ | ----------------- | ------------- | --------------------------------- |
 | 0      | Synthetic test    | Either        | Implemented                       |
-| 1      | Camera            | Phone → PC    | Reserved for a later change       |
+| 1      | Camera            | Phone → PC    | Implemented — see §7              |
 | 2      | Microphone        | Phone → PC    | Implemented — see §5              |
 | 3      | Speaker           | PC → Phone    | Implemented — see §6              |
 | 4-255  | —                 | —             | Reserved                          |
@@ -306,7 +306,7 @@ Announces that the source wants to send a stream, and with what format.
 | Field    | Type    | Description                                    |
 | -------- | ------- | ---------------------------------------------- |
 | `stream` | u8      | Stream identifier from §2.2.                    |
-| `params` | object  | Format parameters. Audio fields below; video streams will define their own. |
+| `params` | object  | Format parameters. Audio fields below; video fields in §7.1. |
 
 Audio `params` fields:
 
@@ -469,3 +469,49 @@ encoding with two channels). At 48 kHz stereo, a 20 ms frame is 960 samples per 
 One self-delimited Opus packet per frame, encoding 20 ms of stereo at 48 kHz. As for the
 microphone, Opus is offered only when the source has a working encoder and PCM S16LE remains the
 baseline every peer MUST accept.
+
+## 7. Camera stream (stream ID 1)
+
+Phone → PC video, carried on stream ID 1 after a `stream_start`/`stream_ack` exchange (§3.9). The
+**phone** is the source; the desktop, as sink, drives its toggle with `stream_request` (§3.9.4).
+
+Each transport frame carries exactly **one video frame**. The media header timestamp (§2.1) is the
+frame's capture time, in microseconds since session start, on the sender's clock. Video frames are
+larger than one datagram and fragment per §2.4; a 720p MJPEG frame typically spans 30–90 packets.
+The incomplete-frame rules of §2.4 apply unchanged: **any lost or late fragment costs exactly that
+one video frame** — the frame is discarded, counted, and decoding continues with the next complete
+frame. Nothing is retransmitted and no back-channel exists to request recovery, which is why the
+baseline codec must produce independently decodable frames.
+
+The source MAY stop transmitting frames without ending the stream, and MAY skip frames freely to
+respect `max_fps` or shed load. A receiver MUST tolerate an arbitrary gap in frames — its virtual
+camera simply holds the last delivered frame — and resume normally when frames reappear.
+
+### 7.1 Video `params` fields
+
+```json
+{
+  "type": "stream_start",
+  "stream": 1,
+  "params": { "codec": "mjpeg", "width": 1280, "height": 720, "max_fps": 30 }
+}
+```
+
+| Field     | Type   | Description                                                        |
+| --------- | ------ | ------------------------------------------------------------------ |
+| `codec`   | string | `"mjpeg"`. MJPEG is the mandatory baseline every peer supports; inter-frame codecs may be added as negotiated options in a later version. |
+| `width`   | u32    | Frame width in pixels. `1280` is the default offering.              |
+| `height`  | u32    | Frame height in pixels. `720` is the default offering.              |
+| `max_fps` | u32    | Upper bound on the source's frame rate. The source MAY deliver fewer frames; it MUST NOT exceed this rate. `30` is the default. |
+
+As for audio, unknown `params` fields MUST be ignored, and a `stream_start` for an already-active
+stream replaces its parameters — the sink re-acks and resets the stream's receive state. That
+replacement flow is how a mid-stream resolution change is performed. A sink MAY refuse dimensions
+it cannot handle (e.g. frames too large for its reassembly budget) with reason `internal`.
+
+### 7.2 `mjpeg` payload
+
+One complete [JFIF/JPEG](https://www.w3.org/Graphics/JPEG/) image per transport frame, baseline
+DCT, encoding the full frame at the negotiated dimensions. Every frame is independently decodable:
+no state is shared between frames, so frame loss never corrupts subsequent frames. A payload that
+fails JPEG decoding MUST be dropped and counted by the sink without ending the stream.

@@ -22,14 +22,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.laffy.unifiedstream.session.CameraStreamState
 import com.laffy.unifiedstream.session.ConnectionState
 import com.laffy.unifiedstream.session.SessionService
+import com.laffy.unifiedstream.ui.CameraControls
 import com.laffy.unifiedstream.ui.DeviceListScreen
 import com.laffy.unifiedstream.ui.MicControls
 import com.laffy.unifiedstream.ui.SessionScreen
 import com.laffy.unifiedstream.ui.SpeakerControls
 import com.laffy.unifiedstream.ui.UnifiedStreamViewModel
 import com.laffy.unifiedstream.ui.theme.UnifiedStreamTheme
+import com.laffy.unifiedstream.video.CameraFacing
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,6 +72,10 @@ fun UnifiedStreamApp(
     val micGain by viewModel.micGain.collectAsStateWithLifecycle()
     val micNoiseSuppression by viewModel.micNoiseSuppression.collectAsStateWithLifecycle()
     val micPermissionNeeded by viewModel.micPermissionNeeded.collectAsStateWithLifecycle()
+    val cameraState by viewModel.cameraState.collectAsStateWithLifecycle()
+    val cameraFacing by viewModel.cameraFacing.collectAsStateWithLifecycle()
+    val cameraResolution by viewModel.cameraResolution.collectAsStateWithLifecycle()
+    val cameraPermissionNeeded by viewModel.cameraPermissionNeeded.collectAsStateWithLifecycle()
     val speakerState by viewModel.speakerState.collectAsStateWithLifecycle()
     val speakerLevel by viewModel.speakerLevel.collectAsStateWithLifecycle()
     val speakerMuted by viewModel.speakerMuted.collectAsStateWithLifecycle()
@@ -86,6 +93,12 @@ fun UnifiedStreamApp(
         if (granted) viewModel.enableMic() else viewModel.onMicPermissionDenied()
     }
 
+    val cameraPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) viewModel.enableCamera() else viewModel.onCameraPermissionDenied()
+    }
+
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -99,7 +112,9 @@ fun UnifiedStreamApp(
     }
 
     // The foreground service is what keeps the session alive once the user leaves the app.
-    LaunchedEffect(connection) {
+    // Re-started when the camera stream turns on so the service can pick up the camera
+    // foreground type, which the platform requires for capture to survive backgrounding.
+    LaunchedEffect(connection, cameraState is CameraStreamState.Active) {
         when (val state = connection) {
             is ConnectionState.Connected -> {
                 screen = Screen.Session
@@ -157,6 +172,28 @@ fun UnifiedStreamApp(
                 onMuteToggle = viewModel::setMicMuted,
                 onGainChange = viewModel::setMicGain,
                 onNoiseSuppressionToggle = viewModel::setMicNoiseSuppression,
+            ),
+            camera = CameraControls(
+                state = cameraState,
+                facing = cameraFacing,
+                resolution = cameraResolution,
+                permissionNeeded = cameraPermissionNeeded,
+                onToggle = { enable ->
+                    if (!enable) {
+                        viewModel.disableCamera()
+                    } else if (viewModel.hasCameraPermission()) {
+                        viewModel.enableCamera()
+                    } else {
+                        cameraPermission.launch(Manifest.permission.CAMERA)
+                    }
+                },
+                onFacingToggle = {
+                    viewModel.setCameraFacing(
+                        if (cameraFacing == CameraFacing.BACK) CameraFacing.FRONT else CameraFacing.BACK,
+                    )
+                },
+                onResolutionSelect = viewModel::setCameraResolution,
+                onPreviewSurface = viewModel::setCameraPreview,
             ),
             speaker = SpeakerControls(
                 state = speakerState,

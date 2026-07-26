@@ -16,7 +16,9 @@ import com.laffy.unifiedstream.protocol.ControlMessage
 import com.laffy.unifiedstream.protocol.ErrorReason
 import com.laffy.unifiedstream.protocol.DEFAULT_MEDIA_PORT
 import com.laffy.unifiedstream.protocol.StreamId
+import com.laffy.unifiedstream.protocol.StreamParams
 import com.laffy.unifiedstream.protocol.StreamRefusal
+import com.laffy.unifiedstream.protocol.VideoParams
 import com.laffy.unifiedstream.protocol.intersectCaps
 import com.laffy.unifiedstream.telemetry.TelemetryCollector
 import com.laffy.unifiedstream.transport.DemuxResult
@@ -55,6 +57,21 @@ private const val MIC_FRAME_QUEUE_CAPACITY = 8
 
 /** How many speaker frames between level updates: 3 x 20 ms ≈ 15 Hz. */
 private const val SPEAKER_LEVEL_EVERY_FRAMES = 3
+
+/**
+ * Captured video frames queued for sending. Two frames only: with video, the freshest complete
+ * frame is worth more than any backlog, so a stalled sender drops the newest rather than
+ * growing a latency debt — the next capture is fresher than anything it would displace.
+ */
+private const val CAMERA_FRAME_QUEUE_CAPACITY = 2
+
+/**
+ * Datagrams sent back-to-back before yielding within one video frame.
+ *
+ * A 720p frame is ~50 fragments; blasting them as one burst measurably raises loss on
+ * consumer Wi-Fi, and spreading the frame across a few milliseconds costs nothing at 30 fps.
+ */
+private const val CAMERA_FRAGMENT_BURST = 10
 
 /**
  * Owns the connection lifecycle: connect, reconnect with backoff, disconnect.
@@ -114,6 +131,21 @@ class SessionManager(
     private val _micStartRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
     val micStartRequests: SharedFlow<Unit> = _micStartRequests.asSharedFlow()
 
+    private val _cameraState = MutableStateFlow<CameraStreamState>(CameraStreamState.Inactive)
+
+    /** Camera stream lifecycle. The single source of truth for camera UI and capture. */
+    val cameraState: StateFlow<CameraStreamState> = _cameraState.asStateFlow()
+
+    /**
+     * Desktop-initiated requests to start the camera.
+     *
+     * Not handled here because starting capture needs a permission check only an Android
+     * component can perform; the observer either calls [startCameraStream] or
+     * [refuseCameraRequest] — the mic's pattern exactly.
+     */
+    private val _cameraStartRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
+    val cameraStartRequests: SharedFlow<Unit> = _cameraStartRequests.asSharedFlow()
+
     private val _speakerState = MutableStateFlow<SpeakerStreamState>(SpeakerStreamState.Inactive)
 
     /** Speaker stream lifecycle. The single source of truth for speaker UI and playback. */
@@ -162,6 +194,18 @@ class SessionManager(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
+    private var cameraSendJob: Job? = null
+    private var cameraAckTimeoutJob: Job? = null
+    private var cameraParams = VideoParams()
+
+    /** Whether the user wants the camera on, so a reconnect can re-announce the stream. */
+    private var cameraDesired: Boolean = false
+
+    private val cameraFrames = Channel<ByteArray>(
+        capacity = CAMERA_FRAME_QUEUE_CAPACITY,
+        onBufferOverflow = BufferOverflow.DROP_LATEST,
+    )
+
     /** The device we are connected to, or trying to reach. */
     private var target: DiscoveredDevice? = null
 
@@ -194,6 +238,7 @@ class SessionManager(
     fun disconnect() {
         userInitiatedStop = true
         micDesired = false
+        cameraDesired = false
         speakerDesired = false
         connectJob?.cancel()
         connectJob = null
@@ -215,6 +260,7 @@ class SessionManager(
         if (_state.value !is ConnectionState.Reconnecting) return
         userInitiatedStop = true
         micDesired = false
+        cameraDesired = false
         speakerDesired = false
         connectJob?.cancel()
         connectJob = null
@@ -311,6 +357,21 @@ class SessionManager(
             }
             return
         }
+        if (stream == StreamId.CAMERA.value) {
+            if (_cameraState.value !is CameraStreamState.Starting) return
+            cameraAckTimeoutJob?.cancel()
+            cameraAckTimeoutJob = null
+
+            if (accepted) {
+                val sessionId = _state.value.activeSessionId ?: return
+                _cameraState.value = CameraStreamState.Active(cameraParams)
+                startCameraSending(sessionId)
+            } else {
+                cameraDesired = false
+                _cameraState.value = CameraStreamState.Refused(reason ?: StreamRefusal.UNKNOWN)
+            }
+            return
+        }
         if (stream != StreamId.MICROPHONE.value) return
         if (_micState.value !is MicStreamState.Starting) return
         micAckTimeoutJob?.cancel()
@@ -347,6 +408,105 @@ class SessionManager(
         micAckTimeoutJob = null
         micSendJob?.cancel()
         micSendJob = null
+    }
+
+    // --- Camera stream ------------------------------------------------------------------
+
+    /**
+     * Announce the camera stream to the desktop. No media flows until it is accepted.
+     *
+     * The caller is responsible for having `CAMERA` granted; this only runs the protocol
+     * side. Calling it while the stream is active with different [params] performs the
+     * §3.9.1 replacement flow — the desktop re-acks and reopens its device at the new format,
+     * which is how a resolution change works.
+     */
+    fun startCameraStream(params: VideoParams = VideoParams()) {
+        val state = _state.value
+        if (state !is ConnectionState.Connected) return
+        if (_cameraState.value is CameraStreamState.Starting) return
+        if (Caps.CAMERA !in state.negotiatedCaps) {
+            _cameraState.value = CameraStreamState.Refused(StreamRefusal.NOT_NEGOTIATED)
+            return
+        }
+
+        cameraDesired = true
+        cameraParams = params
+        _cameraState.value = CameraStreamState.Starting
+        client?.send(ControlMessage.StreamStart(StreamId.CAMERA.value, params))
+
+        cameraAckTimeoutJob?.cancel()
+        cameraAckTimeoutJob = scope.launch {
+            delay(STREAM_ACK_TIMEOUT_MS)
+            if (_cameraState.value is CameraStreamState.Starting) {
+                Log.w(TAG, "camera stream_start was never answered")
+                _cameraState.value = CameraStreamState.Error("Device did not answer")
+            }
+        }
+    }
+
+    /** Stop the camera stream and tell the desktop. */
+    fun stopCameraStream() {
+        cameraDesired = false
+        val wasLive = _cameraState.value is CameraStreamState.Starting ||
+            _cameraState.value is CameraStreamState.Active
+        stopCameraSending()
+        if (wasLive) client?.send(ControlMessage.StreamStop(StreamId.CAMERA.value))
+        _cameraState.value = CameraStreamState.Inactive
+    }
+
+    /**
+     * Refuse a desktop-initiated camera request this phone cannot honour — no permission, or
+     * capture is broken. A request left unanswered would hang the desktop's toggle.
+     */
+    fun refuseCameraRequest(reason: StreamRefusal = StreamRefusal.INTERNAL) {
+        client?.send(
+            ControlMessage.StreamAck(StreamId.CAMERA.value, accepted = false, reason = reason),
+        )
+    }
+
+    /** Report a local capture failure: stops the stream and surfaces the error. */
+    fun reportCameraFailure(message: String) {
+        stopCameraStream()
+        _cameraState.value = CameraStreamState.Error(message)
+    }
+
+    /**
+     * Queue one encoded JPEG frame for sending.
+     *
+     * Returns false when the camera stream is not active. A full queue drops this frame —
+     * the next capture is fresher than anything waiting would be.
+     */
+    fun sendCameraFrame(jpeg: ByteArray): Boolean {
+        if (!_cameraState.value.isActive) return false
+        return cameraFrames.trySend(jpeg).isSuccess
+    }
+
+    private fun startCameraSending(sessionId: Long) {
+        cameraSendJob?.cancel()
+        // Frames queued before this activation belong to a previous stream generation.
+        while (cameraFrames.tryReceive().isSuccess) Unit
+
+        cameraSendJob = scope.launch {
+            val socket = media ?: return@launch
+            val sender = MediaSender(sessionId)
+            frames@ for (payload in cameraFrames) {
+                // One video frame is dozens of datagrams; pace them in small bursts so a
+                // frame does not arrive as a single loss-prone blast, protocol §7.
+                val datagrams = sender.frame(StreamId.CAMERA, payload)
+                for (burst in datagrams.chunked(CAMERA_FRAGMENT_BURST)) {
+                    if (!socket.sendAll(burst)) break@frames
+                    telemetry.recordSent(burst.sumOf { it.size }.toLong())
+                    if (burst.size == CAMERA_FRAGMENT_BURST) delay(1)
+                }
+            }
+        }
+    }
+
+    private fun stopCameraSending() {
+        cameraAckTimeoutJob?.cancel()
+        cameraAckTimeoutJob = null
+        cameraSendJob?.cancel()
+        cameraSendJob = null
     }
 
     // --- Speaker stream -----------------------------------------------------------------
@@ -404,7 +564,7 @@ class SessionManager(
      * Answer the desktop's `stream_start`. Only the speaker stream is sinkable; everything
      * else is refused so the desktop's ack timeout never fires blind.
      */
-    private fun onStreamStart(stream: Int, params: AudioParams) {
+    private fun onStreamStart(stream: Int, params: StreamParams) {
         if (stream != StreamId.SPEAKER.value) {
             client?.send(
                 ControlMessage.StreamAck(stream, accepted = false, reason = StreamRefusal.UNSUPPORTED_STREAM),
@@ -421,11 +581,13 @@ class SessionManager(
         }
 
         // PCM S16LE at 48 kHz, mono or stereo, is what this phone plays; Opus is the desktop's
-        // stretch task and refused until a decoder exists.
-        val playable = params.codec == AudioCodec.PCM_S16LE &&
-            params.sampleRate == 48_000 &&
-            params.channels in 1..2
-        if (!playable) {
+        // stretch task — and video parameters on an audio stream — are refused the same way.
+        val audio = params as? AudioParams
+        val playable = audio != null &&
+            audio.codec == AudioCodec.PCM_S16LE &&
+            audio.sampleRate == 48_000 &&
+            audio.channels in 1..2
+        if (audio == null || !playable) {
             client?.send(
                 ControlMessage.StreamAck(stream, accepted = false, reason = StreamRefusal.UNSUPPORTED_CODEC),
             )
@@ -444,7 +606,7 @@ class SessionManager(
         speakerFramesSinceLevel = 0
 
         client?.send(ControlMessage.StreamAck(stream, accepted = true))
-        _speakerState.value = SpeakerStreamState.Active(params)
+        _speakerState.value = SpeakerStreamState.Active(audio)
     }
 
     /** Route one reassembled speaker frame into the jitter buffer, metering as it passes. */
@@ -521,6 +683,7 @@ class SessionManager(
             // sinks down with the old connection, so anything the user still wants on is
             // re-announced with a fresh stream_start — or, for the speaker, re-requested.
             if (micDesired) startMicStream(micParams)
+            if (cameraDesired) startCameraStream(cameraParams)
             if (speakerDesired) startSpeaker()
         } catch (e: ControlConnectException) {
             Log.w(TAG, "connect attempt ${attempt + 1} failed", e)
@@ -621,6 +784,13 @@ class SessionManager(
 
                         event.stream == StreamId.MICROPHONE.value -> stopMicStream()
 
+                        event.stream == StreamId.CAMERA.value && event.active ->
+                            // Same shape as the mic: the CAMERA permission check belongs to
+                            // an Android component, so the request is surfaced, not obeyed.
+                            _cameraStartRequests.tryEmit(Unit)
+
+                        event.stream == StreamId.CAMERA.value -> stopCameraStream()
+
                         event.active ->
                             // A stream this phone cannot source; answer rather than hang the
                             // desktop's ack timeout.
@@ -645,6 +815,17 @@ class SessionManager(
                             micDesired = false
                             stopMicSending()
                             _micState.value = MicStreamState.Inactive
+                        }
+                        if (event.stream == StreamId.CAMERA.value &&
+                            _cameraState.value !is CameraStreamState.Inactive &&
+                            _cameraState.value !is CameraStreamState.Starting
+                        ) {
+                            // A stop while Starting is the §3.9.1 replacement flow tearing the
+                            // old generation down; the fresh ack is still on its way, so only
+                            // an established stream is ended here.
+                            cameraDesired = false
+                            stopCameraSending()
+                            _cameraState.value = CameraStreamState.Inactive
                         }
                         if (event.stream == StreamId.SPEAKER.value &&
                             _speakerState.value !is SpeakerStreamState.Inactive
@@ -757,10 +938,12 @@ class SessionManager(
         client = null
 
         stopTestStream()
-        // The streams die with the session, but `micDesired` and `speakerDesired` survive so
-        // a successful reconnect can re-announce them.
+        // The streams die with the session, but the `*Desired` flags survive so a successful
+        // reconnect can re-announce them.
         stopMicSending()
         _micState.value = MicStreamState.Inactive
+        stopCameraSending()
+        _cameraState.value = CameraStreamState.Inactive
         releaseSpeakerReception()
         _speakerState.value = SpeakerStreamState.Inactive
         mediaReceiveJob?.cancel()

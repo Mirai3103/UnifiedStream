@@ -226,6 +226,99 @@ impl AudioParams {
     };
 }
 
+/// Video codec named in stream parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum VideoCodec {
+    /// One complete JPEG image per frame. The mandatory baseline every peer decodes:
+    /// every frame is independently decodable, so loss never corrupts later frames.
+    Mjpeg,
+    /// A codec this build does not know.
+    ///
+    /// Deserialized rather than rejected so the sink can answer with a `stream_ack` refusal
+    /// (`unsupported_codec`) instead of treating the whole line as malformed.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Format parameters for a video stream, protocol §7.1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VideoParams {
+    /// Payload encoding.
+    pub codec: VideoCodec,
+    /// Frame width in pixels.
+    pub width: u32,
+    /// Frame height in pixels.
+    pub height: u32,
+    /// Upper bound on the source's frame rate. The source may deliver fewer frames.
+    pub max_fps: u32,
+}
+
+impl VideoParams {
+    /// The camera default: MJPEG at 1280x720, up to 30 fps.
+    pub const CAMERA_MJPEG_720P: Self = Self {
+        codec: VideoCodec::Mjpeg,
+        width: 1280,
+        height: 720,
+        max_fps: 30,
+    };
+}
+
+/// Parameters carried by a `stream_start`: audio fields (§3.9.1) or video fields (§7.1).
+///
+/// Untagged because the wire carries a bare object either way; the required fields are
+/// disjoint (`sample_rate` vs `width`), so the shape alone identifies the kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StreamParams {
+    /// An audio stream's format.
+    Audio(AudioParams),
+    /// A video stream's format.
+    Video(VideoParams),
+}
+
+impl StreamParams {
+    /// The audio parameters, when this is an audio stream.
+    #[must_use]
+    pub const fn as_audio(self) -> Option<AudioParams> {
+        match self {
+            Self::Audio(params) => Some(params),
+            Self::Video(_) => None,
+        }
+    }
+
+    /// The video parameters, when this is a video stream.
+    #[must_use]
+    pub const fn as_video(self) -> Option<VideoParams> {
+        match self {
+            Self::Video(params) => Some(params),
+            Self::Audio(_) => None,
+        }
+    }
+
+    /// Whether the named codec is one this build has never heard of.
+    #[must_use]
+    pub const fn codec_is_unknown(self) -> bool {
+        match self {
+            Self::Audio(params) => matches!(params.codec, AudioCodec::Unknown),
+            Self::Video(params) => matches!(params.codec, VideoCodec::Unknown),
+        }
+    }
+}
+
+impl From<AudioParams> for StreamParams {
+    fn from(params: AudioParams) -> Self {
+        Self::Audio(params)
+    }
+}
+
+impl From<VideoParams> for StreamParams {
+    fn from(params: VideoParams) -> Self {
+        Self::Video(params)
+    }
+}
+
 /// Why a `stream_start` or `stream_request` was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -271,7 +364,7 @@ pub enum ControlMessage {
         /// Stream identifier, protocol §2.2.
         stream: u8,
         /// Format the source will send.
-        params: AudioParams,
+        params: StreamParams,
     },
     /// Sink accepts or refuses a `stream_start`, protocol §3.9.2.
     StreamAck {
@@ -507,7 +600,7 @@ mod tests {
     fn stream_start_should_round_trip_through_a_line() {
         let original = ControlMessage::StreamStart {
             stream: 2,
-            params: AudioParams::MICROPHONE_PCM,
+            params: AudioParams::MICROPHONE_PCM.into(),
         };
         let parsed = ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
         assert_eq!(parsed, original);
@@ -517,7 +610,7 @@ mod tests {
     fn stream_start_should_serialize_the_documented_shape() {
         let line = ControlMessage::StreamStart {
             stream: 2,
-            params: AudioParams::MICROPHONE_PCM,
+            params: AudioParams::MICROPHONE_PCM.into(),
         }
         .to_line()
         .expect("encode");
@@ -525,6 +618,58 @@ mod tests {
             line.trim_end(),
             r#"{"type":"stream_start","stream":2,"params":{"codec":"pcm_s16le","sample_rate":48000,"channels":1,"frame_ms":20}}"#
         );
+    }
+
+    #[test]
+    fn a_video_stream_start_should_round_trip_through_a_line() {
+        let original = ControlMessage::StreamStart {
+            stream: 1,
+            params: VideoParams::CAMERA_MJPEG_720P.into(),
+        };
+        let parsed = ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
+        assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn a_video_stream_start_should_serialize_the_documented_shape() {
+        let line = ControlMessage::StreamStart {
+            stream: 1,
+            params: VideoParams::CAMERA_MJPEG_720P.into(),
+        }
+        .to_line()
+        .expect("encode");
+        assert_eq!(
+            line.trim_end(),
+            r#"{"type":"stream_start","stream":1,"params":{"codec":"mjpeg","width":1280,"height":720,"max_fps":30}}"#
+        );
+    }
+
+    #[test]
+    fn params_should_parse_as_video_when_the_shape_is_video() {
+        // The kinds are untagged on the wire; the disjoint required fields must be enough.
+        let line = r#"{"type":"stream_start","stream":1,"params":{"codec":"mjpeg","width":640,"height":480,"max_fps":15}}"#;
+        let parsed = ControlMessage::from_line(line).expect("must parse");
+        let ControlMessage::StreamStart { params, .. } = parsed else {
+            panic!("expected stream_start");
+        };
+        let video = params.as_video().expect("must be video params");
+        assert_eq!(video.codec, VideoCodec::Mjpeg);
+        assert_eq!((video.width, video.height, video.max_fps), (640, 480, 15));
+        assert!(params.as_audio().is_none());
+    }
+
+    #[test]
+    fn an_unknown_video_codec_should_parse_rather_than_reject_the_line() {
+        let line = r#"{"type":"stream_start","stream":1,"params":{"codec":"h264","width":1280,"height":720,"max_fps":30}}"#;
+        let parsed = ControlMessage::from_line(line).expect("must parse");
+        let ControlMessage::StreamStart { params, .. } = parsed else {
+            panic!("expected stream_start");
+        };
+        assert_eq!(
+            params.as_video().map(|v| v.codec),
+            Some(VideoCodec::Unknown)
+        );
+        assert!(params.codec_is_unknown());
     }
 
     #[test]
@@ -570,7 +715,10 @@ mod tests {
         let ControlMessage::StreamStart { params, .. } = parsed else {
             panic!("expected stream_start");
         };
-        assert_eq!(params.codec, AudioCodec::Unknown);
+        assert_eq!(
+            params.as_audio().map(|a| a.codec),
+            Some(AudioCodec::Unknown)
+        );
     }
 
     #[test]

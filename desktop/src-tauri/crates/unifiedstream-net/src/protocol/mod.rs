@@ -12,7 +12,7 @@ pub use header::{
 };
 pub use messages::{
     caps, intersect_caps, AudioCodec, AudioParams, ControlMessage, ErrorMessage, ErrorReason,
-    Hello, HelloAck, StreamRefusal, TelemetryReport,
+    Hello, HelloAck, StreamParams, StreamRefusal, TelemetryReport, VideoCodec, VideoParams,
 };
 pub(crate) use messages::u64_string;
 

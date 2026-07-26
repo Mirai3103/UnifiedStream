@@ -69,6 +69,31 @@ export interface MicStatus {
   params: AudioParams | null;
 }
 
+export interface VideoParams {
+  codec: "mjpeg" | "unknown";
+  width: number;
+  height: number;
+  max_fps: number;
+}
+
+export interface CameraStatus {
+  active: boolean;
+  error: string | null;
+  /** The command that fixes a missing v4l2loopback module, when that was the failure. */
+  hint: string | null;
+  params: VideoParams | null;
+  /** Device node the virtual camera writes to, e.g. /dev/video10. */
+  device: string | null;
+}
+
+/** Delivered-frame counters, 1 Hz while the camera stream is active. */
+export interface CameraStats {
+  frames_written: number;
+  decode_failures: number;
+  /** Frames written over the last second; 0 means a stalled (not stopped) stream. */
+  fps: number;
+}
+
 export interface SpeakerStatus {
   active: boolean;
   starting: boolean;
@@ -95,6 +120,7 @@ export interface StatusSnapshot {
   test_stream_running: boolean;
   mic: MicStatus;
   speaker: SpeakerStatus;
+  camera: CameraStatus;
 }
 
 /** Event names emitted by the Rust side. Mirrors `app::events`. */
@@ -107,6 +133,8 @@ export const EVENTS = {
   micLevel: "mic-level",
   speakerStatus: "speaker-status",
   speakerLevel: "speaker-level",
+  cameraStatus: "camera-status",
+  cameraStats: "camera-stats",
 } as const;
 
 /** Human-readable text for a failure. */

@@ -19,8 +19,8 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::error::{NetError, Result};
 use crate::protocol::{
-    caps, intersect_caps, AudioCodec, AudioParams, ControlMessage, ErrorReason, Hello, HelloAck,
-    StreamId, StreamRefusal, TelemetryReport, PROTOCOL_VERSION,
+    caps, intersect_caps, ControlMessage, ErrorReason, Hello, HelloAck, StreamId, StreamParams,
+    StreamRefusal, TelemetryReport, PROTOCOL_VERSION,
 };
 use crate::session::{ConnectionState, FailureReason};
 
@@ -47,7 +47,7 @@ pub const STREAM_START_TIMEOUT: std::time::Duration = std::time::Duration::from_
 /// Returns the [`StreamRefusal`] to put in the `stream_ack` when the stream must be refused.
 pub fn evaluate_stream_start(
     stream: u8,
-    params: &AudioParams,
+    params: &StreamParams,
     negotiated_caps: &[String],
 ) -> std::result::Result<(), StreamRefusal> {
     // Streams the desktop can sink, and the capability token that gates each.
@@ -61,7 +61,7 @@ pub fn evaluate_stream_start(
     if !negotiated_caps.iter().any(|c| c == required_cap) {
         return Err(StreamRefusal::NotNegotiated);
     }
-    if matches!(params.codec, AudioCodec::Unknown) {
+    if params.codec_is_unknown() {
         return Err(StreamRefusal::UnsupportedCodec);
     }
     Ok(())
@@ -254,7 +254,7 @@ pub enum ControlEvent {
         /// Stream identifier, protocol §2.2.
         stream: u8,
         /// Format the peer will send.
-        params: AudioParams,
+        params: StreamParams,
         /// Send `Ok(())` to accept, or the refusal to report.
         respond: oneshot::Sender<std::result::Result<(), StreamRefusal>>,
     },
@@ -323,7 +323,7 @@ struct ActiveSession {
     /// Outbound queue of the connection serving this session.
     outbound: mpsc::Sender<ControlMessage>,
     /// Streams the peer has started and we have accepted, with their negotiated parameters.
-    active_streams: HashMap<u8, AudioParams>,
+    active_streams: HashMap<u8, StreamParams>,
 }
 
 /// Handle to a running control server.
@@ -418,10 +418,14 @@ impl ControlHandle {
     /// # Errors
     ///
     /// Returns [`NetError::NoSession`] if no peer is connected.
-    pub async fn start_stream(&self, stream: StreamId, params: AudioParams) -> Result<()> {
+    pub async fn start_stream(
+        &self,
+        stream: StreamId,
+        params: impl Into<StreamParams>,
+    ) -> Result<()> {
         self.send(ControlMessage::StreamStart {
             stream: stream.get(),
-            params,
+            params: params.into(),
         })
         .await
     }
@@ -439,7 +443,7 @@ impl ControlHandle {
     }
 
     /// Parameters of an accepted stream, if it is currently active.
-    pub async fn stream_params(&self, stream: StreamId) -> Option<AudioParams> {
+    pub async fn stream_params(&self, stream: StreamId) -> Option<StreamParams> {
         self.shared
             .lock()
             .await
@@ -746,7 +750,7 @@ impl ControlServer {
     async fn handle_stream_start(
         &self,
         stream: u8,
-        params: AudioParams,
+        params: StreamParams,
         ctx: &ConnectionCtx<'_>,
         write_half: &mut tokio::net::tcp::OwnedWriteHalf,
     ) -> Result<()> {
@@ -1053,6 +1057,7 @@ pub fn now_micros() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::{AudioCodec, AudioParams, VideoCodec, VideoParams};
 
     fn hello() -> Hello {
         Hello {
@@ -1272,7 +1277,15 @@ mod tests {
     #[test]
     fn a_negotiated_microphone_stream_should_be_accepted() {
         assert_eq!(
-            evaluate_stream_start(2, &AudioParams::MICROPHONE_PCM, &negotiated()),
+            evaluate_stream_start(2, &AudioParams::MICROPHONE_PCM.into(), &negotiated()),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn a_negotiated_camera_stream_should_be_accepted() {
+        assert_eq!(
+            evaluate_stream_start(1, &VideoParams::CAMERA_MJPEG_720P.into(), &negotiated()),
             Ok(())
         );
     }
@@ -1281,7 +1294,12 @@ mod tests {
     fn a_stream_without_its_capability_should_be_refused_as_not_negotiated() {
         let caps = vec!["cam".to_owned()];
         assert_eq!(
-            evaluate_stream_start(2, &AudioParams::MICROPHONE_PCM, &caps),
+            evaluate_stream_start(2, &AudioParams::MICROPHONE_PCM.into(), &caps),
+            Err(StreamRefusal::NotNegotiated)
+        );
+        let caps = vec!["mic".to_owned()];
+        assert_eq!(
+            evaluate_stream_start(1, &VideoParams::CAMERA_MJPEG_720P.into(), &caps),
             Err(StreamRefusal::NotNegotiated)
         );
     }
@@ -1293,7 +1311,19 @@ mod tests {
             ..AudioParams::MICROPHONE_PCM
         };
         assert_eq!(
-            evaluate_stream_start(2, &params, &negotiated()),
+            evaluate_stream_start(2, &params.into(), &negotiated()),
+            Err(StreamRefusal::UnsupportedCodec)
+        );
+    }
+
+    #[test]
+    fn an_unknown_video_codec_should_be_refused_as_unsupported_codec() {
+        let params = VideoParams {
+            codec: VideoCodec::Unknown,
+            ..VideoParams::CAMERA_MJPEG_720P
+        };
+        assert_eq!(
+            evaluate_stream_start(1, &params.into(), &negotiated()),
             Err(StreamRefusal::UnsupportedCodec)
         );
     }
@@ -1303,7 +1333,7 @@ mod tests {
         // Stream 3 is sourced by the desktop, and 200 is unassigned; a phone may offer neither.
         for stream in [3, 200] {
             assert_eq!(
-                evaluate_stream_start(stream, &AudioParams::MICROPHONE_PCM, &negotiated()),
+                evaluate_stream_start(stream, &AudioParams::MICROPHONE_PCM.into(), &negotiated()),
                 Err(StreamRefusal::UnsupportedStream),
                 "stream {stream} must be refused"
             );

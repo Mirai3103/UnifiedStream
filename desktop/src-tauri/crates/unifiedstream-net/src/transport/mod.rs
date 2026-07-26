@@ -8,7 +8,9 @@ mod reassembly;
 mod sender;
 mod synthetic;
 
-pub use reassembly::{Frame, StreamReceiver, StreamStats, TimestampUnwrapper, REORDER_WINDOW};
+pub use reassembly::{
+    Frame, StreamReceiver, StreamStats, TimestampUnwrapper, MAX_FRAME_BYTES, REORDER_WINDOW,
+};
 pub use sender::{Datagram, MediaSender};
 pub use synthetic::{
     build_frame, IntegrityError, TestStreamConfig, TestStreamGenerator, TestStreamReport,

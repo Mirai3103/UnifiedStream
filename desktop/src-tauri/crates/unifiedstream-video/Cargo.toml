@@ -1,0 +1,24 @@
+[package]
+name = "unifiedstream-video"
+description = "UnifiedStream video output: MJPEG decoding and the v4l2loopback virtual camera. No Tauri dependency."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true
+# Pure-Rust JPEG decoding: network-fed frames never reach C code.
+zune-jpeg = "0.4"
+zune-core = "0.4"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Raw v4l2 ioctls (pregenerated bindings, no libv4l linkage).
+v4l = { version = "0.14", default-features = false, features = ["v4l2"] }
+
+[dev-dependencies]
+jpeg-encoder = "0.6"
+unifiedstream-net.workspace = true
+
+[lints]
+workspace = true

@@ -82,6 +82,13 @@ class SessionService : android.app.Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && hasRecordAudio) {
             types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         }
+        // The camera type follows the same rule as the microphone: declared only when its
+        // permission is granted, and it is what lets capture continue in the background.
+        val hasCamera = checkSelfPermission(android.Manifest.permission.CAMERA) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && hasCamera) {
+            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+        }
         return types
     }
 

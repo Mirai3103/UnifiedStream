@@ -1,7 +1,7 @@
 package com.laffy.unifiedstream.control
 
 import android.util.Log
-import com.laffy.unifiedstream.protocol.AudioParams
+import com.laffy.unifiedstream.protocol.StreamParams
 import com.laffy.unifiedstream.protocol.ControlCodec
 import com.laffy.unifiedstream.protocol.ControlMessage
 import com.laffy.unifiedstream.protocol.ErrorReason
@@ -73,7 +73,7 @@ sealed interface ControlClientEvent {
     /** The desktop announced a stream it wants to send us, protocol §3.9.1. */
     data class StreamStartReceived(
         val stream: Int,
-        val params: AudioParams,
+        val params: StreamParams,
     ) : ControlClientEvent
 
     /** The desktop ended a stream, protocol §3.9.3. */

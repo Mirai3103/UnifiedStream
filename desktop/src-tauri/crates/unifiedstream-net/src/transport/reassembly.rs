@@ -14,6 +14,13 @@ use crate::protocol::{seq_distance, seq_is_newer, MediaHeader};
 /// minimize. Three packets covers LAN reordering, which is rare.
 pub const REORDER_WINDOW: usize = 3;
 
+/// Upper bound on one reassembled frame's payload.
+///
+/// Audio frames are a few KB and even a 1080p MJPEG frame tops out well under 300 KB, so
+/// anything larger is a broken or hostile sender. Without a cap, a stream of fragments that
+/// never delivers its marker would grow the fragment buffer without bound.
+pub const MAX_FRAME_BYTES: usize = 512 * 1024;
+
 /// A fully reassembled frame ready for a consumer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
@@ -109,6 +116,9 @@ pub struct StreamReceiver {
     pending: BTreeMap<u16, HeldPacket>,
     /// Fragments accumulated for the frame currently being reassembled.
     fragments: Vec<HeldPacket>,
+    /// Payload bytes held in `fragments`, kept alongside so the [`MAX_FRAME_BYTES`] check is
+    /// O(1) per packet.
+    fragment_bytes: usize,
     /// Whether we know where a frame boundary is.
     ///
     /// A receiver that joins mid-frame — first packet reordered, or a stream picked up in
@@ -229,10 +239,7 @@ impl StreamReceiver {
 
         // An unfragmented packet is a whole frame on its own, and re-establishes the boundary.
         if !packet.fragment {
-            if !self.fragments.is_empty() {
-                self.fragments.clear();
-                self.stats.incomplete_frames += 1;
-            }
+            self.drop_partial();
             self.synced = true;
             self.stats.delivered_frames += 1;
             return Some(Frame {
@@ -255,13 +262,22 @@ impl StreamReceiver {
         // A newer frame starting means the previous one will never complete.
         if let Some(first) = self.fragments.first() {
             if first.timestamp_us != packet.timestamp_us {
-                self.fragments.clear();
-                self.stats.incomplete_frames += 1;
+                self.drop_partial();
             }
+        }
+
+        // A frame past the cap can never be delivered; holding more of it would let one
+        // stream grow memory without bound. The rest of the frame is unusable, so boundary
+        // sync is re-established only by this packet's own marker.
+        if self.fragment_bytes + packet.payload.len() > MAX_FRAME_BYTES {
+            self.drop_partial();
+            self.synced = packet.marker;
+            return None;
         }
 
         let is_last = packet.marker;
         let timestamp_raw = packet.timestamp_us;
+        self.fragment_bytes += packet.payload.len();
         self.fragments.push(packet);
 
         if !is_last {
@@ -270,16 +286,16 @@ impl StreamReceiver {
 
         // A fragmented frame is only whole if its fragments are sequentially contiguous.
         if self.fragments.len() > 1 && !self.fragments_are_contiguous() {
-            self.fragments.clear();
-            self.stats.incomplete_frames += 1;
+            self.drop_partial();
             return None;
         }
 
         let first_sequence = self.fragments.first().map_or(0, |p| p.sequence);
-        let mut payload = Vec::new();
+        let mut payload = Vec::with_capacity(self.fragment_bytes);
         for fragment in self.fragments.drain(..) {
             payload.extend_from_slice(&fragment.payload);
         }
+        self.fragment_bytes = 0;
 
         self.stats.delivered_frames += 1;
         Some(Frame {
@@ -287,6 +303,15 @@ impl StreamReceiver {
             first_sequence,
             payload,
         })
+    }
+
+    /// Discard the partial frame under construction, counting it once if there was one.
+    fn drop_partial(&mut self) {
+        if !self.fragments.is_empty() {
+            self.fragments.clear();
+            self.stats.incomplete_frames += 1;
+        }
+        self.fragment_bytes = 0;
     }
 
     fn fragments_are_contiguous(&self) -> bool {
@@ -308,10 +333,7 @@ impl StreamReceiver {
                 break;
             }
         }
-        if !self.fragments.is_empty() {
-            self.fragments.clear();
-            self.stats.incomplete_frames += 1;
-        }
+        self.drop_partial();
         frames
     }
 
@@ -556,6 +578,83 @@ mod tests {
         // An out-of-order packet, not a wrap.
         assert_eq!(unwrapper.unwrap_ts(9_000), 9_000);
         assert_eq!(unwrapper.unwrap_ts(11_000), 11_000);
+    }
+
+    #[test]
+    fn a_fifty_fragment_video_frame_should_round_trip_byte_identical() {
+        // A ~60 KB MJPEG frame at the wire's 1200-byte fragment size, protocol §7.
+        let payload: Vec<u8> = (0..60_000_u32).map(|i| (i % 251) as u8).collect();
+        let chunks: Vec<&[u8]> = payload.chunks(MAX_PAYLOAD).collect();
+        assert_eq!(chunks.len(), 50);
+
+        let mut rx = StreamReceiver::new();
+        let mut delivered = Vec::new();
+        for (i, chunk) in chunks.iter().enumerate() {
+            let seq = u16::try_from(i).expect("fits");
+            let marker = i + 1 == chunks.len();
+            delivered.extend(rx.accept(&header(seq, 9_000, true, marker), chunk));
+        }
+
+        assert_eq!(delivered.len(), 1);
+        assert_eq!(delivered[0].payload, payload);
+        assert_eq!(rx.stats().delivered_frames, 1);
+        assert_eq!(rx.stats().incomplete_frames, 0);
+    }
+
+    #[test]
+    fn losing_one_fragment_of_a_video_frame_should_cost_only_that_frame() {
+        let mut rx = StreamReceiver::new();
+
+        // Frame A: 50 fragments, sequence 25 never arrives.
+        let mut delivered = 0;
+        for i in 0..50_u16 {
+            if i == 25 {
+                continue;
+            }
+            delivered += rx.accept(&header(i, 1_000, true, i == 49), b"x").len();
+        }
+        // Frame B: complete, and pushes A's gap past the reorder window.
+        for i in 50..100_u16 {
+            delivered += rx.accept(&header(i, 2_000, true, i == 99), b"y").len();
+        }
+
+        assert_eq!(delivered, 1, "only the complete frame may be delivered");
+        assert_eq!(rx.stats().incomplete_frames, 1);
+        assert_eq!(rx.stats().lost, 1);
+    }
+
+    #[test]
+    fn a_frame_past_the_size_cap_should_be_dropped_without_unbounded_buffering() {
+        let mut rx = StreamReceiver::new();
+        let chunk = vec![0xCD_u8; MAX_PAYLOAD];
+        // Enough same-timestamp fragments to exceed MAX_FRAME_BYTES, marker never sent.
+        let over = u16::try_from(MAX_FRAME_BYTES / MAX_PAYLOAD + 8).expect("fits");
+        for i in 0..over {
+            let frames = rx.accept(&header(i, 3_000, true, false), &chunk);
+            assert!(frames.is_empty(), "an oversized frame must never be delivered");
+        }
+
+        assert!(
+            rx.fragment_bytes <= MAX_FRAME_BYTES,
+            "held bytes must stay capped, got {}",
+            rx.fragment_bytes
+        );
+        assert!(rx.stats().incomplete_frames >= 1);
+    }
+
+    #[test]
+    fn the_frame_after_an_oversized_one_should_be_delivered_once_a_boundary_returns() {
+        let mut rx = StreamReceiver::new();
+        let chunk = vec![0xCD_u8; MAX_PAYLOAD];
+        let over = u16::try_from(MAX_FRAME_BYTES / MAX_PAYLOAD + 2).expect("fits");
+        for i in 0..over {
+            // The final fragment carries the marker, closing the oversized frame.
+            rx.accept(&header(i, 3_000, true, i == over - 1), &chunk);
+        }
+
+        let frames = rx.accept(&whole(over, 4_000), b"next frame");
+        assert_eq!(frames.len(), 1, "the stream must recover after the oversized frame");
+        assert_eq!(frames[0].payload, b"next frame");
     }
 
     #[test]

@@ -185,7 +185,9 @@ fn control_lines_should_match_the_committed_fixture() {
         hello_ack_high_session_id: String,
         stream_start_mic_pcm: String,
         stream_start_speaker_pcm: String,
+        stream_start_camera_mjpeg: String,
         stream_request_speaker_start: String,
+        stream_request_camera_start: String,
         stream_ack_accepted: String,
         stream_ack_refused: String,
         stream_stop: String,
@@ -212,22 +214,29 @@ fn control_lines_should_match_the_committed_fixture() {
     assert_eq!(parsed, ack);
 
     // Stream lifecycle lines, protocol §3.9. The Kotlin suite parses and re-emits these.
-    use unifiedstream_net::protocol::{AudioParams, StreamRefusal};
+    use unifiedstream_net::protocol::{AudioParams, StreamRefusal, VideoParams};
 
     let cases = [
         (
             ControlMessage::StreamStart {
                 stream: 2,
-                params: AudioParams::MICROPHONE_PCM,
+                params: AudioParams::MICROPHONE_PCM.into(),
             },
             &expected.stream_start_mic_pcm,
         ),
         (
             ControlMessage::StreamStart {
                 stream: 3,
-                params: AudioParams::SPEAKER_PCM,
+                params: AudioParams::SPEAKER_PCM.into(),
             },
             &expected.stream_start_speaker_pcm,
+        ),
+        (
+            ControlMessage::StreamStart {
+                stream: 1,
+                params: VideoParams::CAMERA_MJPEG_720P.into(),
+            },
+            &expected.stream_start_camera_mjpeg,
         ),
         (
             ControlMessage::StreamRequest {
@@ -235,6 +244,13 @@ fn control_lines_should_match_the_committed_fixture() {
                 active: true,
             },
             &expected.stream_request_speaker_start,
+        ),
+        (
+            ControlMessage::StreamRequest {
+                stream: 1,
+                active: true,
+            },
+            &expected.stream_request_camera_start,
         ),
         (ControlMessage::stream_accept(2), &expected.stream_ack_accepted),
         (

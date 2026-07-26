@@ -49,10 +49,18 @@ import com.laffy.unifiedstream.audio.AudioLevel
 import com.laffy.unifiedstream.discovery.DiscoveredDevice
 import com.laffy.unifiedstream.discovery.DiscoveryState
 import com.laffy.unifiedstream.discovery.ManualAddress
+import androidx.camera.core.Preview
+import androidx.camera.view.PreviewView
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.viewinterop.AndroidView
 import com.laffy.unifiedstream.protocol.MAX_PAYLOAD
+import com.laffy.unifiedstream.session.CameraStreamState
 import com.laffy.unifiedstream.session.ConnectionState
 import com.laffy.unifiedstream.session.MicStreamState
 import com.laffy.unifiedstream.session.SpeakerStreamState
+import com.laffy.unifiedstream.video.CameraFacing
+import com.laffy.unifiedstream.video.CameraResolution
 import com.laffy.unifiedstream.telemetry.LinkQuality
 import com.laffy.unifiedstream.transport.TestStreamReport
 import com.laffy.unifiedstream.ui.theme.Degraded
@@ -62,9 +70,17 @@ import com.laffy.unifiedstream.ui.theme.Surface1
 import com.laffy.unifiedstream.ui.theme.Surface2
 import com.laffy.unifiedstream.ui.theme.TextMuted
 
-/** Features that exist in the UI but have no implementation behind them yet. */
-private val PLANNED_FEATURES = listOf(
-    Triple("cam", "Camera", "Stream this camera to the PC"),
+/** Everything the camera card renders and calls back into. */
+data class CameraControls(
+    val state: CameraStreamState = CameraStreamState.Inactive,
+    val facing: CameraFacing = CameraFacing.BACK,
+    val resolution: CameraResolution = CameraResolution.HD,
+    val permissionNeeded: Boolean = false,
+    val onToggle: (Boolean) -> Unit = {},
+    val onFacingToggle: () -> Unit = {},
+    val onResolutionSelect: (CameraResolution) -> Unit = {},
+    /** Attaches the local preview surface while the card shows one; null detaches. */
+    val onPreviewSurface: (Preview.SurfaceProvider?) -> Unit = {},
 )
 
 /** Everything the microphone card renders and calls back into. */
@@ -312,6 +328,7 @@ fun SessionScreen(
     testReport: TestStreamReport?,
     testRunning: Boolean,
     mic: MicControls,
+    camera: CameraControls,
     speaker: SpeakerControls,
     onStartTestStream: (Int, Int) -> Unit,
     onStopTestStream: () -> Unit,
@@ -354,20 +371,11 @@ fun SessionScreen(
             onStop = onStopTestStream,
         )
 
+        CameraCard(connected = connection.isConnected, camera = camera)
+
         MicrophoneCard(connected = connection.isConnected, mic = mic)
 
         SpeakerCard(connected = connection.isConnected, speaker = speaker)
-
-        SectionCard(title = "Streams") {
-            PLANNED_FEATURES.forEach { (id, label, hint) ->
-                FeatureToggleRow(key = id, label = label, hint = hint)
-            }
-            Text(
-                text = "The camera arrives in a later change.",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextMuted,
-            )
-        }
 
         when {
             connection is ConnectionState.Reconnecting ->
@@ -451,6 +459,109 @@ private fun TestStreamCard(
                 Metric("Verified", it.verified.toString(), Modifier.weight(1f))
                 Metric("Missing", it.missing.toString(), Modifier.weight(1f))
                 Metric("Corrupt", it.corrupt.toString(), Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CameraCard(connected: Boolean, camera: CameraControls) {
+    val streaming = camera.state is CameraStreamState.Active
+    val switchOn = streaming || camera.state is CameraStreamState.Starting
+
+    SectionCard(
+        title = "Camera",
+        trailing = {
+            Switch(
+                checked = switchOn,
+                onCheckedChange = camera.onToggle,
+                enabled = connected,
+            )
+        },
+    ) {
+        when (val state = camera.state) {
+            is CameraStreamState.Active -> {
+                // Local preview so the user can frame the shot without looking at the PC.
+                AndroidView(
+                    factory = { context ->
+                        PreviewView(context).apply {
+                            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                        }
+                    },
+                    update = { view -> camera.onPreviewSurface(view.surfaceProvider) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(state.params.width.toFloat() / state.params.height)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Surface2),
+                )
+                DisposableEffect(Unit) {
+                    onDispose { camera.onPreviewSurface(null) }
+                }
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Streaming ${state.params.width}x${state.params.height}",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Good,
+                    )
+                    OutlinedButton(onClick = camera.onFacingToggle) {
+                        Text(if (camera.facing == CameraFacing.BACK) "Front" else "Back")
+                    }
+                }
+
+                ResolutionRow(camera)
+            }
+
+            is CameraStreamState.Starting -> Text(
+                text = "Waiting for the PC to accept…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextMuted,
+            )
+
+            else -> {
+                val explanation = when {
+                    camera.permissionNeeded ->
+                        "Camera permission is required. Grant it to stream video."
+                    !connected -> "Connect to a PC to use the phone as its webcam."
+                    else -> state.display ?: "Use this phone as the PC's webcam."
+                }
+                Text(
+                    text = explanation,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (state is CameraStreamState.Refused ||
+                        state is CameraStreamState.Error || camera.permissionNeeded
+                    ) {
+                        Poor
+                    } else {
+                        TextMuted
+                    },
+                )
+                if (connected) ResolutionRow(camera)
+            }
+        }
+    }
+}
+
+/** One button per offered resolution; the current pick is filled. */
+@Composable
+private fun ResolutionRow(camera: CameraControls) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        CameraResolution.entries.forEach { resolution ->
+            if (resolution == camera.resolution) {
+                Button(
+                    onClick = {},
+                    modifier = Modifier.weight(1f),
+                ) { Text(resolution.label) }
+            } else {
+                OutlinedButton(
+                    onClick = { camera.onResolutionSelect(resolution) },
+                    modifier = Modifier.weight(1f),
+                ) { Text(resolution.label) }
             }
         }
     }
@@ -737,32 +848,6 @@ private fun QualityBadge(quality: LinkQuality) {
         color = color,
         fontWeight = FontWeight.SemiBold,
     )
-}
-
-@Composable
-private fun FeatureToggleRow(key: String, label: String, hint: String) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Surface2)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.titleSmall,
-                // Dimmed because these toggles are deliberately inert until the media changes
-                // land; an enabled-looking control that does nothing is worse than an obvious
-                // placeholder.
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-            )
-            Text(text = hint, style = MaterialTheme.typography.bodySmall, color = TextMuted)
-        }
-        Switch(checked = false, onCheckedChange = null, enabled = false)
-    }
 }
 
 @Composable
