@@ -42,7 +42,13 @@ pub fn run() {
             let handle = tauri_app.handle().clone();
             tauri::async_runtime::block_on(async move {
                 match app::AppState::new(config_dir).await {
-                    Ok(state) => app::init(&handle, Arc::new(state)),
+                    Ok(state) => {
+                        let state = Arc::new(state);
+                        // A crash while the speaker held the default output must not leave the
+                        // user's audio pointed at a node that no longer exists.
+                        app::sweep_stale_routing(&state).await;
+                        app::init(&handle, state);
+                    }
                     Err(e) => tracing::error!(error = %e, "could not initialize app state"),
                 }
             });
@@ -69,6 +75,9 @@ pub fn run() {
             app::start_test_stream,
             app::stop_test_stream,
             app::set_mic_enabled,
+            app::set_speaker_enabled,
+            app::set_speaker_muted,
+            app::set_speaker_routing,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

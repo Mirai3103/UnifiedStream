@@ -6,9 +6,10 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.laffy.unifiedstream.audio.AudioLevel
 import com.laffy.unifiedstream.audio.MicCapture
 import com.laffy.unifiedstream.audio.MicController
-import com.laffy.unifiedstream.audio.MicLevel
+import com.laffy.unifiedstream.audio.SpeakerPlayback
 import com.laffy.unifiedstream.discovery.DeviceDiscovery
 import com.laffy.unifiedstream.discovery.DeviceIdentity
 import com.laffy.unifiedstream.discovery.DeviceIdentityStore
@@ -19,6 +20,7 @@ import com.laffy.unifiedstream.protocol.Caps
 import com.laffy.unifiedstream.session.ConnectionState
 import com.laffy.unifiedstream.session.MicStreamState
 import com.laffy.unifiedstream.session.SessionManager
+import com.laffy.unifiedstream.session.SpeakerStreamState
 import com.laffy.unifiedstream.telemetry.LinkQuality
 import com.laffy.unifiedstream.transport.TestStreamConfig
 import com.laffy.unifiedstream.transport.TestStreamReport
@@ -92,7 +94,7 @@ class UnifiedStreamViewModel(application: Application) : AndroidViewModel(applic
     val micState: StateFlow<MicStreamState> = _micState.asStateFlow()
 
     /** Live input level for the mic meter. Zero while muted or off. */
-    val micLevel: StateFlow<MicLevel> = micController.level
+    val micLevel: StateFlow<AudioLevel> = micController.level
 
     /** Whether frames are being withheld while the stream stays up. */
     val micMuted: StateFlow<Boolean> = micController.muted
@@ -110,6 +112,28 @@ class UnifiedStreamViewModel(application: Application) : AndroidViewModel(applic
 
     /** True after a denied `RECORD_AUDIO` request, so the UI can explain the dead toggle. */
     val micPermissionNeeded: StateFlow<Boolean> = _micPermissionNeeded.asStateFlow()
+
+    private var speakerPlayback: SpeakerPlayback? = null
+
+    private val _speakerState = MutableStateFlow<SpeakerStreamState>(SpeakerStreamState.Inactive)
+
+    /** Speaker stream lifecycle, for the toggle and its error states. */
+    val speakerState: StateFlow<SpeakerStreamState> = _speakerState.asStateFlow()
+
+    private val _speakerLevel = MutableStateFlow(AudioLevel())
+
+    /** Live output level for the speaker meter. Zero while off. */
+    val speakerLevel: StateFlow<AudioLevel> = _speakerLevel.asStateFlow()
+
+    private val _speakerMuted = MutableStateFlow(false)
+
+    /** Whether playback is silenced locally. Reception and the stream continue. */
+    val speakerMuted: StateFlow<Boolean> = _speakerMuted.asStateFlow()
+
+    private val _speakerVolume = MutableStateFlow(SpeakerPlayback.VOLUME_DEFAULT)
+
+    /** Playback volume, 0.0–1.0, composing with the hardware media volume. */
+    val speakerVolume: StateFlow<Float> = _speakerVolume.asStateFlow()
 
     /** Devices found on the network. */
     val devices: StateFlow<List<DiscoveredDevice>> = discovery.devices
@@ -149,6 +173,19 @@ class UnifiedStreamViewModel(application: Application) : AndroidViewModel(applic
                     if (state is MicStreamState.Active) startCapture() else stopCapture()
                 }
             }
+            launch {
+                manager.speakerState.collect { state ->
+                    _speakerState.value = state
+                    // Playback runs exactly while the stream is accepted; everything else —
+                    // refusal, stop, teardown — flows from this one binding.
+                    if (state is SpeakerStreamState.Active) {
+                        startSpeakerPlayback(state.params.channels)
+                    } else {
+                        stopSpeakerPlayback()
+                    }
+                }
+            }
+            launch { manager.speakerLevel.collect { _speakerLevel.value = it } }
             launch {
                 manager.micStartRequests.collect {
                     // The desktop asked for the mic. Honour it only if the permission is
@@ -257,6 +294,49 @@ class UnifiedStreamViewModel(application: Application) : AndroidViewModel(applic
         micCapture?.applyNoiseSuppression(enabled && micController.noiseSuppressionAvailable)
     }
 
+    // --- Speaker ---------------------------------------------------------------------------
+
+    /** Ask the PC to start streaming its audio to this phone. */
+    fun enableSpeaker() {
+        session?.startSpeaker()
+    }
+
+    /** Stop the speaker stream. */
+    fun disableSpeaker() {
+        session?.stopSpeaker()
+    }
+
+    /** Silence playback locally without touching the stream. */
+    fun setSpeakerMuted(muted: Boolean) {
+        _speakerMuted.value = muted
+        speakerPlayback?.setMuted(muted)
+    }
+
+    /** Set the playback volume, 0.0–1.0. */
+    fun setSpeakerVolume(volume: Float) {
+        val clamped = volume.coerceIn(0f, 1f)
+        _speakerVolume.value = clamped
+        speakerPlayback?.setVolume(clamped)
+    }
+
+    private fun startSpeakerPlayback(channels: Int) {
+        if (speakerPlayback?.isRunning == true) return
+        val manager = session ?: return
+        val playback = SpeakerPlayback(
+            buffer = manager.speakerBuffer,
+            onFailure = { message -> manager.reportSpeakerFailure(message) },
+        )
+        speakerPlayback = playback
+        playback.setVolume(_speakerVolume.value)
+        playback.setMuted(_speakerMuted.value)
+        playback.start(channels)
+    }
+
+    private fun stopSpeakerPlayback() {
+        speakerPlayback?.stop()
+        speakerPlayback = null
+    }
+
     /** Whether `RECORD_AUDIO` is currently granted. */
     fun hasRecordPermission(): Boolean = ContextCompat.checkSelfPermission(
         getApplication(),
@@ -309,6 +389,7 @@ class UnifiedStreamViewModel(application: Application) : AndroidViewModel(applic
         super.onCleared()
         discovery.stop()
         stopCapture()
+        stopSpeakerPlayback()
         session?.disconnect()
     }
 }

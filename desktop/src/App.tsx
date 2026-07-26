@@ -3,11 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import {
+  AudioLevel,
   ConnectionState,
   EVENTS,
-  MicLevel,
   MicStatus,
   PairingRequest,
+  SpeakerStatus,
   StatusSnapshot,
   TelemetryTick,
   TestStreamReport,
@@ -18,8 +19,16 @@ import {
 /** Features that exist in the UI but have no implementation behind them yet. */
 const PLANNED_FEATURES = [
   { id: "cam", label: "Camera", hint: "Phone camera as a webcam" },
-  { id: "spk", label: "Speaker", hint: "PC audio to phone speakers" },
 ] as const;
+
+const IDLE_SPEAKER: SpeakerStatus = {
+  active: false,
+  starting: false,
+  muted: false,
+  routed: false,
+  error: null,
+  params: null,
+};
 
 function App() {
   const [status, setStatus] = useState<StatusSnapshot | null>(null);
@@ -36,9 +45,14 @@ function App() {
     error: null,
     params: null,
   });
-  const [micLevel, setMicLevel] = useState<MicLevel>({ rms: 0, peak: 0 });
+  const [micLevel, setMicLevel] = useState<AudioLevel>({ rms: 0, peak: 0 });
   // True between asking the phone for the mic and hearing its answer.
   const [micPending, setMicPending] = useState(false);
+  const [speaker, setSpeaker] = useState<SpeakerStatus>(IDLE_SPEAKER);
+  const [speakerLevel, setSpeakerLevel] = useState<AudioLevel>({
+    rms: 0,
+    peak: 0,
+  });
 
   const refresh = useCallback(async () => {
     try {
@@ -47,6 +61,7 @@ function App() {
       setState(snapshot.state);
       setTestRunning(snapshot.test_stream_running);
       setMic(snapshot.mic);
+      setSpeaker(snapshot.speaker);
     } catch (e) {
       setError(String(e));
     }
@@ -66,6 +81,8 @@ function App() {
           setMic({ active: false, error: null, params: null });
           setMicLevel({ rms: 0, peak: 0 });
           setMicPending(false);
+          setSpeaker(IDLE_SPEAKER);
+          setSpeakerLevel({ rms: 0, peak: 0 });
         }
       }),
       listen<PairingRequest>(EVENTS.pairingRequest, (event) =>
@@ -82,7 +99,14 @@ function App() {
         setMicPending(false);
         if (!event.payload.active) setMicLevel({ rms: 0, peak: 0 });
       }),
-      listen<MicLevel>(EVENTS.micLevel, (event) => setMicLevel(event.payload)),
+      listen<AudioLevel>(EVENTS.micLevel, (event) => setMicLevel(event.payload)),
+      listen<SpeakerStatus>(EVENTS.speakerStatus, (event) => {
+        setSpeaker(event.payload);
+        if (!event.payload.active) setSpeakerLevel({ rms: 0, peak: 0 });
+      }),
+      listen<AudioLevel>(EVENTS.speakerLevel, (event) =>
+        setSpeakerLevel(event.payload),
+      ),
     ];
 
     return () => {
@@ -132,6 +156,20 @@ function App() {
       setMicPending(false);
       setError(String(e));
     }
+  };
+
+  const toggleSpeaker = async () => {
+    await run("set_speaker_enabled", {
+      enabled: !(speaker.active || speaker.starting),
+    });
+  };
+
+  const toggleSpeakerMute = async () => {
+    await run("set_speaker_muted", { muted: !speaker.muted });
+  };
+
+  const toggleSpeakerRouting = async () => {
+    await run("set_speaker_routing", { enabled: !speaker.routed });
   };
 
   const connected = state.state === "connected";
@@ -379,6 +417,95 @@ function App() {
 
       <section className="glass panel">
         <div className="panel-head">
+          <h2>Speaker</h2>
+          <span className={`dot dot-${speaker.active ? "on" : "off"}`} />
+        </div>
+
+        <div className="features">
+          <div className="feature">
+            <div>
+              <div className="feature-label">Wireless speaker</div>
+              <div className="muted small">
+                {speaker.active
+                  ? `Live — play audio into "UnifiedStream Speaker" to hear it on the phone (${
+                      speaker.params
+                        ? `${speaker.params.codec}, ${speaker.params.sample_rate / 1000} kHz, ${
+                            speaker.params.channels === 2 ? "stereo" : "mono"
+                          }`
+                        : "…"
+                    })`
+                  : speaker.starting
+                    ? "Waiting for the phone…"
+                    : "Send this PC's audio to the phone's speaker"}
+              </div>
+            </div>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={speaker.active || speaker.starting}
+                disabled={!connected || speaker.starting}
+                onChange={() => void toggleSpeaker()}
+              />
+              <span className="slider" />
+            </label>
+          </div>
+
+          {speaker.active && (
+            <div className="feature">
+              <div>
+                <div className="feature-label">Route system audio</div>
+                <div className="muted small">
+                  {speaker.routed
+                    ? "All system audio goes to the phone; your previous output is restored on stop"
+                    : "Make the virtual sink the default output, so everything plays on the phone"}
+                </div>
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={speaker.routed}
+                  onChange={() => void toggleSpeakerRouting()}
+                />
+                <span className="slider" />
+              </label>
+            </div>
+          )}
+        </div>
+
+        {speaker.active && (
+          <>
+            <div className="level-meter" aria-label="speaker level">
+              <div
+                className="level-fill"
+                style={{ width: `${Math.round(speakerLevel.rms * 100)}%` }}
+              />
+              <div
+                className="level-peak"
+                style={{ left: `${Math.round(speakerLevel.peak * 100)}%` }}
+              />
+            </div>
+            <div className="row">
+              <button onClick={() => void toggleSpeakerMute()}>
+                {speaker.muted ? "Unmute" : "Mute"}
+              </button>
+              {speaker.muted && (
+                <span className="muted small">
+                  Muted — the phone hears silence
+                </span>
+              )}
+            </div>
+          </>
+        )}
+
+        {speaker.error && (
+          <p className="muted small error-text" role="alert">
+            {speaker.error}
+          </p>
+        )}
+      </section>
+
+      <section className="glass panel">
+        <div className="panel-head">
           <h2>Streams</h2>
         </div>
         <div className="features">
@@ -396,7 +523,7 @@ function App() {
           ))}
         </div>
         <p className="muted small">
-          Camera and speaker arrive in later changes.
+          The camera arrives in a later change.
         </p>
       </section>
     </main>

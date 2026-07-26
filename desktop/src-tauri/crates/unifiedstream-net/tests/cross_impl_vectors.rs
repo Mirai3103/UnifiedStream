@@ -184,6 +184,8 @@ fn control_lines_should_match_the_committed_fixture() {
     struct Lines {
         hello_ack_high_session_id: String,
         stream_start_mic_pcm: String,
+        stream_start_speaker_pcm: String,
+        stream_request_speaker_start: String,
         stream_ack_accepted: String,
         stream_ack_refused: String,
         stream_stop: String,
@@ -219,6 +221,20 @@ fn control_lines_should_match_the_committed_fixture() {
                 params: AudioParams::MICROPHONE_PCM,
             },
             &expected.stream_start_mic_pcm,
+        ),
+        (
+            ControlMessage::StreamStart {
+                stream: 3,
+                params: AudioParams::SPEAKER_PCM,
+            },
+            &expected.stream_start_speaker_pcm,
+        ),
+        (
+            ControlMessage::StreamRequest {
+                stream: 3,
+                active: true,
+            },
+            &expected.stream_request_speaker_start,
         ),
         (ControlMessage::stream_accept(2), &expected.stream_ack_accepted),
         (

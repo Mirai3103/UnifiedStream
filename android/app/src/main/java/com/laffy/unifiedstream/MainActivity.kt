@@ -27,6 +27,7 @@ import com.laffy.unifiedstream.session.SessionService
 import com.laffy.unifiedstream.ui.DeviceListScreen
 import com.laffy.unifiedstream.ui.MicControls
 import com.laffy.unifiedstream.ui.SessionScreen
+import com.laffy.unifiedstream.ui.SpeakerControls
 import com.laffy.unifiedstream.ui.UnifiedStreamViewModel
 import com.laffy.unifiedstream.ui.theme.UnifiedStreamTheme
 
@@ -68,6 +69,10 @@ fun UnifiedStreamApp(
     val micGain by viewModel.micGain.collectAsStateWithLifecycle()
     val micNoiseSuppression by viewModel.micNoiseSuppression.collectAsStateWithLifecycle()
     val micPermissionNeeded by viewModel.micPermissionNeeded.collectAsStateWithLifecycle()
+    val speakerState by viewModel.speakerState.collectAsStateWithLifecycle()
+    val speakerLevel by viewModel.speakerLevel.collectAsStateWithLifecycle()
+    val speakerMuted by viewModel.speakerMuted.collectAsStateWithLifecycle()
+    val speakerVolume by viewModel.speakerVolume.collectAsStateWithLifecycle()
 
     var screen by remember { mutableStateOf(Screen.Devices) }
 
@@ -152,6 +157,17 @@ fun UnifiedStreamApp(
                 onMuteToggle = viewModel::setMicMuted,
                 onGainChange = viewModel::setMicGain,
                 onNoiseSuppressionToggle = viewModel::setMicNoiseSuppression,
+            ),
+            speaker = SpeakerControls(
+                state = speakerState,
+                level = speakerLevel,
+                muted = speakerMuted,
+                volume = speakerVolume,
+                onToggle = { enable ->
+                    if (enable) viewModel.enableSpeaker() else viewModel.disableSpeaker()
+                },
+                onMuteToggle = viewModel::setSpeakerMuted,
+                onVolumeChange = viewModel::setSpeakerVolume,
             ),
             onStartTestStream = viewModel::startTestStream,
             onStopTestStream = viewModel::stopTestStream,

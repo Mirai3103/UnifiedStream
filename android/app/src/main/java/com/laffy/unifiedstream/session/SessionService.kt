@@ -71,10 +71,12 @@ class SessionService : android.app.Service() {
      *
      * The microphone type is included only when `RECORD_AUDIO` is granted — declaring a type
      * whose permission is missing throws on API 34+, and the session must still be able to run
-     * without a mic.
+     * without a mic. Media playback needs no runtime permission, so the speaker type is
+     * always declared; it is what lets playback continue in the background.
      */
     private fun foregroundServiceTypes(): Int {
-        var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
         val hasRecordAudio = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && hasRecordAudio) {

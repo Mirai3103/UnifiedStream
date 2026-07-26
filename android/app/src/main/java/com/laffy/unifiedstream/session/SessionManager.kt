@@ -1,11 +1,16 @@
 package com.laffy.unifiedstream.session
 
 import android.util.Log
+import com.laffy.unifiedstream.audio.AudioLevel
+import com.laffy.unifiedstream.audio.SpeakerJitterBuffer
+import com.laffy.unifiedstream.audio.decodeS16le
 import com.laffy.unifiedstream.control.ControlClient
 import com.laffy.unifiedstream.control.ControlClientEvent
 import com.laffy.unifiedstream.control.ControlConnectException
 import com.laffy.unifiedstream.discovery.DiscoveredDevice
+import com.laffy.unifiedstream.protocol.AudioCodec
 import com.laffy.unifiedstream.protocol.AudioParams
+import com.laffy.unifiedstream.protocol.MediaHeader
 import com.laffy.unifiedstream.protocol.Caps
 import com.laffy.unifiedstream.protocol.ControlMessage
 import com.laffy.unifiedstream.protocol.ErrorReason
@@ -47,6 +52,9 @@ const val STREAM_ACK_TIMEOUT_MS: Long = 5_000
  * so when the sender falls behind, dropping the oldest 20 ms beats growing a latency debt.
  */
 private const val MIC_FRAME_QUEUE_CAPACITY = 8
+
+/** How many speaker frames between level updates: 3 x 20 ms ≈ 15 Hz. */
+private const val SPEAKER_LEVEL_EVERY_FRAMES = 3
 
 /**
  * Owns the connection lifecycle: connect, reconnect with backoff, disconnect.
@@ -106,6 +114,24 @@ class SessionManager(
     private val _micStartRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
     val micStartRequests: SharedFlow<Unit> = _micStartRequests.asSharedFlow()
 
+    private val _speakerState = MutableStateFlow<SpeakerStreamState>(SpeakerStreamState.Inactive)
+
+    /** Speaker stream lifecycle. The single source of truth for speaker UI and playback. */
+    val speakerState: StateFlow<SpeakerStreamState> = _speakerState.asStateFlow()
+
+    private val _speakerLevel = MutableStateFlow(AudioLevel())
+
+    /** Live output level from decoded speaker frames, ~15 Hz while audio flows. */
+    val speakerLevel: StateFlow<AudioLevel> = _speakerLevel.asStateFlow()
+
+    /**
+     * Decoded speaker audio waiting for the playback thread.
+     *
+     * Owned here rather than by the audio layer so frames arriving between the accepting
+     * `stream_ack` and the AudioTrack spinning up are buffered, not lost.
+     */
+    val speakerBuffer = SpeakerJitterBuffer()
+
     private var client: ControlClient? = null
     private var eventJob: Job? = null
     private var connectJob: Job? = null
@@ -114,6 +140,15 @@ class SessionManager(
     private var mediaReceiveJob: Job? = null
     private var testStreamJob: Job? = null
     private val telemetry = TelemetryCollector()
+
+    /** The live receiver's demultiplexer, so stream lifecycle can register and unregister. */
+    private var demux: MediaDemux? = null
+
+    private var speakerRequestTimeoutJob: Job? = null
+    private var speakerFramesSinceLevel = 0
+
+    /** Whether the user wants the speaker on, so a reconnect can re-request the stream. */
+    private var speakerDesired: Boolean = false
 
     private var micSendJob: Job? = null
     private var micAckTimeoutJob: Job? = null
@@ -159,6 +194,7 @@ class SessionManager(
     fun disconnect() {
         userInitiatedStop = true
         micDesired = false
+        speakerDesired = false
         connectJob?.cancel()
         connectJob = null
 
@@ -179,6 +215,7 @@ class SessionManager(
         if (_state.value !is ConnectionState.Reconnecting) return
         userInitiatedStop = true
         micDesired = false
+        speakerDesired = false
         connectJob?.cancel()
         connectJob = null
         scope.launch {
@@ -262,6 +299,18 @@ class SessionManager(
     }
 
     private fun onStreamAck(stream: Int, accepted: Boolean, reason: StreamRefusal?) {
+        if (stream == StreamId.SPEAKER.value) {
+            // The desktop refusing our stream_request, protocol §3.9.4. An accepting ack for
+            // the speaker never targets the phone — the desktop is that stream's source.
+            if (!accepted && _speakerState.value is SpeakerStreamState.Requesting) {
+                speakerRequestTimeoutJob?.cancel()
+                speakerRequestTimeoutJob = null
+                speakerDesired = false
+                _speakerState.value =
+                    SpeakerStreamState.Refused(reason ?: StreamRefusal.UNKNOWN)
+            }
+            return
+        }
         if (stream != StreamId.MICROPHONE.value) return
         if (_micState.value !is MicStreamState.Starting) return
         micAckTimeoutJob?.cancel()
@@ -300,6 +349,143 @@ class SessionManager(
         micSendJob = null
     }
 
+    // --- Speaker stream -----------------------------------------------------------------
+
+    /**
+     * Ask the desktop to start the speaker stream, protocol §3.9.4.
+     *
+     * The phone is the sink, so its toggle is a `stream_request`; the desktop answers by
+     * running the normal `stream_start` flow, which [onStreamStart] accepts.
+     */
+    fun startSpeaker() {
+        val state = _state.value
+        if (state !is ConnectionState.Connected) return
+        if (_speakerState.value is SpeakerStreamState.Requesting) return
+        if (Caps.SPEAKER !in state.negotiatedCaps) {
+            _speakerState.value = SpeakerStreamState.Refused(StreamRefusal.NOT_NEGOTIATED)
+            return
+        }
+
+        speakerDesired = true
+        _speakerState.value = SpeakerStreamState.Requesting
+        client?.send(ControlMessage.StreamRequest(StreamId.SPEAKER.value, active = true))
+
+        speakerRequestTimeoutJob?.cancel()
+        speakerRequestTimeoutJob = scope.launch {
+            delay(STREAM_ACK_TIMEOUT_MS)
+            if (_speakerState.value is SpeakerStreamState.Requesting) {
+                Log.w(TAG, "speaker stream_request was never answered")
+                _speakerState.value = SpeakerStreamState.Error("PC did not answer")
+            }
+        }
+    }
+
+    /** Stop the speaker stream and ask the desktop to stop sending. */
+    fun stopSpeaker() {
+        speakerDesired = false
+        val wasLive = _speakerState.value is SpeakerStreamState.Requesting ||
+            _speakerState.value is SpeakerStreamState.Active
+        // The desktop honours the stop by ceasing to send and issuing `stream_stop`;
+        // reception is released locally right away rather than waiting for it.
+        if (wasLive) {
+            client?.send(ControlMessage.StreamRequest(StreamId.SPEAKER.value, active = false))
+        }
+        releaseSpeakerReception()
+        _speakerState.value = SpeakerStreamState.Inactive
+    }
+
+    /** Report a local playback failure: stops the stream and surfaces the error. */
+    fun reportSpeakerFailure(message: String) {
+        stopSpeaker()
+        _speakerState.value = SpeakerStreamState.Error(message)
+    }
+
+    /**
+     * Answer the desktop's `stream_start`. Only the speaker stream is sinkable; everything
+     * else is refused so the desktop's ack timeout never fires blind.
+     */
+    private fun onStreamStart(stream: Int, params: AudioParams) {
+        if (stream != StreamId.SPEAKER.value) {
+            client?.send(
+                ControlMessage.StreamAck(stream, accepted = false, reason = StreamRefusal.UNSUPPORTED_STREAM),
+            )
+            return
+        }
+
+        val state = _state.value as? ConnectionState.Connected
+        if (state == null || Caps.SPEAKER !in state.negotiatedCaps) {
+            client?.send(
+                ControlMessage.StreamAck(stream, accepted = false, reason = StreamRefusal.NOT_NEGOTIATED),
+            )
+            return
+        }
+
+        // PCM S16LE at 48 kHz, mono or stereo, is what this phone plays; Opus is the desktop's
+        // stretch task and refused until a decoder exists.
+        val playable = params.codec == AudioCodec.PCM_S16LE &&
+            params.sampleRate == 48_000 &&
+            params.channels in 1..2
+        if (!playable) {
+            client?.send(
+                ControlMessage.StreamAck(stream, accepted = false, reason = StreamRefusal.UNSUPPORTED_CODEC),
+            )
+            return
+        }
+
+        speakerRequestTimeoutJob?.cancel()
+        speakerRequestTimeoutJob = null
+
+        // A restart replaces the stream: reset receive state before the ack, per §3.9.1.
+        // Reception must be ready before the accepting ack goes out — media may follow it
+        // immediately, and the jitter buffer is what catches frames until playback spins up.
+        demux?.unregister(StreamId.SPEAKER)
+        demux?.register(StreamId.SPEAKER)
+        speakerBuffer.clear()
+        speakerFramesSinceLevel = 0
+
+        client?.send(ControlMessage.StreamAck(stream, accepted = true))
+        _speakerState.value = SpeakerStreamState.Active(params)
+    }
+
+    /** Route one reassembled speaker frame into the jitter buffer, metering as it passes. */
+    private fun onSpeakerFrame(payload: ByteArray) {
+        if (!_speakerState.value.isActive) return
+        val samples = decodeS16le(payload)
+        if (samples.isEmpty()) return
+
+        if (++speakerFramesSinceLevel >= SPEAKER_LEVEL_EVERY_FRAMES) {
+            speakerFramesSinceLevel = 0
+            _speakerLevel.value = levelOf(samples)
+        }
+        speakerBuffer.push(samples)
+    }
+
+    private fun levelOf(samples: ShortArray): AudioLevel {
+        var sumSquares = 0.0
+        var peak = 0
+        for (sample in samples) {
+            val value = sample.toInt()
+            val magnitude = if (value < 0) -value else value
+            if (magnitude > peak) peak = magnitude
+            sumSquares += value.toDouble() * value
+        }
+        val rms = kotlin.math.sqrt(sumSquares / samples.size) / Short.MAX_VALUE
+        return AudioLevel(
+            rms = rms.toFloat().coerceIn(0f, 1f),
+            peak = (peak.toFloat() / Short.MAX_VALUE).coerceIn(0f, 1f),
+        )
+    }
+
+    /** Stop accepting and holding speaker audio. Playback teardown belongs to the observer. */
+    private fun releaseSpeakerReception() {
+        speakerRequestTimeoutJob?.cancel()
+        speakerRequestTimeoutJob = null
+        demux?.unregister(StreamId.SPEAKER)
+        speakerBuffer.clear()
+        _speakerLevel.value = AudioLevel()
+        speakerFramesSinceLevel = 0
+    }
+
     // --- Connection attempts ------------------------------------------------------------
 
     private suspend fun attemptConnect(device: DiscoveredDevice, attempt: Int) {
@@ -333,8 +519,9 @@ class SessionManager(
 
             // A resumed session does not resurrect streams by itself: the desktop tore its
             // sinks down with the old connection, so anything the user still wants on is
-            // re-announced with a fresh stream_start.
+            // re-announced with a fresh stream_start — or, for the speaker, re-requested.
             if (micDesired) startMicStream(micParams)
+            if (speakerDesired) startSpeaker()
         } catch (e: ControlConnectException) {
             Log.w(TAG, "connect attempt ${attempt + 1} failed", e)
             teardown()
@@ -448,6 +635,9 @@ class SessionManager(
                         else -> Unit // a stop request for a stream we are not sending
                     }
 
+                    is ControlClientEvent.StreamStartReceived ->
+                        onStreamStart(event.stream, event.params)
+
                     is ControlClientEvent.StreamStopReceived -> {
                         if (event.stream == StreamId.MICROPHONE.value &&
                             _micState.value !is MicStreamState.Inactive
@@ -455,6 +645,14 @@ class SessionManager(
                             micDesired = false
                             stopMicSending()
                             _micState.value = MicStreamState.Inactive
+                        }
+                        if (event.stream == StreamId.SPEAKER.value &&
+                            _speakerState.value !is SpeakerStreamState.Inactive
+                        ) {
+                            // The desktop ended it deliberately; do not resurrect on reconnect.
+                            speakerDesired = false
+                            releaseSpeakerReception()
+                            _speakerState.value = SpeakerStreamState.Inactive
                         }
                     }
 
@@ -521,8 +719,9 @@ class SessionManager(
 
     private fun startMediaReceive(socket: MediaSocket, sessionId: Long) {
         mediaReceiveJob?.cancel()
+        val fresh = MediaDemux(sessionId).apply { register(StreamId.TEST) }
+        demux = fresh
         mediaReceiveJob = scope.launch {
-            val demux = MediaDemux(sessionId).apply { register(StreamId.TEST) }
             val verifier = TestStreamVerifier()
             val buffer = ByteArray(MAX_DATAGRAM)
 
@@ -530,12 +729,20 @@ class SessionManager(
                 val len = socket.receive(buffer) ?: break
                 telemetry.recordReceived(len.toLong())
 
-                when (val result = demux.accept(buffer, len)) {
+                // The demux returns frames without their stream id; read it from the header
+                // before handing the datagram over.
+                val stream = MediaHeader.decodeOrNull(buffer, len)?.stream
+
+                when (val result = fresh.accept(buffer, len)) {
                     is DemuxResult.Frames -> {
-                        result.frames.forEach { verifier.verify(it.payload) }
-                        val stats = demux.totalStats()
+                        if (stream == StreamId.SPEAKER) {
+                            result.frames.forEach { onSpeakerFrame(it.payload) }
+                        } else {
+                            result.frames.forEach { verifier.verify(it.payload) }
+                            if (result.frames.isNotEmpty()) _testReport.value = verifier.report
+                        }
+                        val stats = fresh.totalStats()
                         telemetry.recordPackets(stats.received, stats.lost)
-                        _testReport.value = verifier.report
                     }
 
                     is DemuxResult.Dropped -> Unit // routine; counted inside the demux
@@ -550,12 +757,15 @@ class SessionManager(
         client = null
 
         stopTestStream()
-        // The stream dies with the session, but `micDesired` survives so a successful
-        // reconnect can re-announce it.
+        // The streams die with the session, but `micDesired` and `speakerDesired` survive so
+        // a successful reconnect can re-announce them.
         stopMicSending()
         _micState.value = MicStreamState.Inactive
+        releaseSpeakerReception()
+        _speakerState.value = SpeakerStreamState.Inactive
         mediaReceiveJob?.cancel()
         mediaReceiveJob = null
+        demux = null
         media?.close()
         media = null
 

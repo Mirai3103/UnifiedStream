@@ -69,7 +69,17 @@ export interface MicStatus {
   params: AudioParams | null;
 }
 
-export interface MicLevel {
+export interface SpeakerStatus {
+  active: boolean;
+  starting: boolean;
+  muted: boolean;
+  routed: boolean;
+  error: string | null;
+  params: AudioParams | null;
+}
+
+/** One live-level sample for a meter — microphone or speaker. Both fields 0..1. */
+export interface AudioLevel {
   rms: number;
   peak: number;
 }
@@ -84,6 +94,7 @@ export interface StatusSnapshot {
   caps: string[];
   test_stream_running: boolean;
   mic: MicStatus;
+  speaker: SpeakerStatus;
 }
 
 /** Event names emitted by the Rust side. Mirrors `app::events`. */
@@ -94,6 +105,8 @@ export const EVENTS = {
   testStream: "test-stream",
   micStatus: "mic-status",
   micLevel: "mic-level",
+  speakerStatus: "speaker-status",
+  speakerLevel: "speaker-level",
 } as const;
 
 /** Human-readable text for a failure. */

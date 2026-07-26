@@ -215,6 +215,15 @@ impl AudioParams {
         channels: 1,
         frame_ms: 20,
     };
+
+    /// The speaker default: PCM S16LE, 48 kHz, stereo, 20 ms frames. Stereo because system
+    /// audio is stereo; voice was the reason the microphone is mono.
+    pub const SPEAKER_PCM: Self = Self {
+        codec: AudioCodec::PcmS16le,
+        sample_rate: 48_000,
+        channels: 2,
+        frame_ms: 20,
+    };
 }
 
 /// Why a `stream_start` or `stream_request` was refused.

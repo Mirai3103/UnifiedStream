@@ -7,6 +7,8 @@
     "media_port": 47811
   },
   "stream_start_mic_pcm": "{\"type\":\"stream_start\",\"stream\":2,\"params\":{\"codec\":\"pcm_s16le\",\"sample_rate\":48000,\"channels\":1,\"frame_ms\":20}}",
+  "stream_start_speaker_pcm": "{\"type\":\"stream_start\",\"stream\":3,\"params\":{\"codec\":\"pcm_s16le\",\"sample_rate\":48000,\"channels\":2,\"frame_ms\":20}}",
+  "stream_request_speaker_start": "{\"type\":\"stream_request\",\"stream\":3,\"active\":true}",
   "stream_ack_accepted": "{\"type\":\"stream_ack\",\"stream\":2,\"accepted\":true}",
   "stream_ack_refused": "{\"type\":\"stream_ack\",\"stream\":2,\"accepted\":false,\"reason\":\"unsupported_codec\"}",
   "stream_stop": "{\"type\":\"stream_stop\",\"stream\":2}",

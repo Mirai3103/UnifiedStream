@@ -67,6 +67,27 @@ pub fn evaluate_stream_start(
     Ok(())
 }
 
+/// Decide how to answer a `stream_request` asking the desktop to source a stream.
+///
+/// Pure for the same reason as [`evaluate_stream_start`]. The desktop sources exactly one
+/// stream — the speaker — and a request is honoured only when its capability was negotiated.
+///
+/// # Errors
+///
+/// Returns the [`StreamRefusal`] to put in the `stream_ack` when the request must be refused.
+pub fn evaluate_stream_request(
+    stream: u8,
+    negotiated_caps: &[String],
+) -> std::result::Result<(), StreamRefusal> {
+    if StreamId(stream) != StreamId::SPEAKER {
+        return Err(StreamRefusal::UnsupportedStream);
+    }
+    if !negotiated_caps.iter().any(|c| c == caps::SPEAKER) {
+        return Err(StreamRefusal::NotNegotiated);
+    }
+    Ok(())
+}
+
 /// Device ids the user has already approved.
 ///
 /// Persisted so a phone the user accepted once is not re-prompted on every reconnect — which
@@ -242,6 +263,26 @@ pub enum ControlEvent {
         /// Stream identifier that is no longer active.
         stream: u8,
     },
+    /// The peer answered a `stream_start` this desktop sent as a stream source.
+    StreamAckReceived {
+        /// Stream identifier being answered.
+        stream: u8,
+        /// Whether media may flow.
+        accepted: bool,
+        /// Why not, when `accepted` is false.
+        reason: Option<StreamRefusal>,
+    },
+    /// The peer asked this desktop to start or stop a stream it sources, and protocol-level
+    /// checks (known stream, negotiated capability) passed.
+    ///
+    /// The application layer honours it by running the normal `stream_start` flow or by
+    /// stopping the stream — a request is not a command, so local preconditions still apply.
+    StreamRequested {
+        /// Stream identifier, protocol §2.2.
+        stream: u8,
+        /// `true` asks for a start, `false` a stop.
+        active: bool,
+    },
 }
 
 /// Everything the control server needs to answer a handshake.
@@ -367,6 +408,32 @@ impl ControlHandle {
         self.send(ControlMessage::StreamRequest {
             stream: stream.get(),
             active,
+        })
+        .await
+    }
+
+    /// Announce a stream this desktop sources, protocol §3.9.1. Media may flow only after an
+    /// accepting `stream_ack` arrives as [`ControlEvent::StreamAckReceived`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NetError::NoSession`] if no peer is connected.
+    pub async fn start_stream(&self, stream: StreamId, params: AudioParams) -> Result<()> {
+        self.send(ControlMessage::StreamStart {
+            stream: stream.get(),
+            params,
+        })
+        .await
+    }
+
+    /// End a stream, protocol §3.9.3.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NetError::NoSession`] if no peer is connected.
+    pub async fn stop_stream(&self, stream: StreamId) -> Result<()> {
+        self.send(ControlMessage::StreamStop {
+            stream: stream.get(),
         })
         .await
     }
@@ -644,20 +711,26 @@ impl ControlServer {
             }
 
             ControlMessage::StreamRequest { stream, active } => {
-                // The desktop sources only the speaker stream, which is a later change; until
-                // then every start request is answered rather than left hanging.
-                if active {
-                    let reply =
-                        ControlMessage::stream_refuse(stream, StreamRefusal::UnsupportedStream);
-                    write_line(write_half, &reply).await?;
-                }
+                self.handle_stream_request(stream, active, ctx, write_half)
+                    .await?;
                 Ok(false)
             }
 
-            ControlMessage::StreamAck { stream, accepted, .. } => {
-                // Answers a `stream_start` the desktop sent; it sends none until the speaker
-                // stream exists.
-                tracing::debug!(%peer_addr, stream, accepted, "ignoring stream_ack");
+            ControlMessage::StreamAck {
+                stream,
+                accepted,
+                reason,
+            } => {
+                // Answers a `stream_start` the desktop sent as the speaker source; the
+                // application layer owns that stream's state.
+                let _ = self
+                    .events
+                    .send(ControlEvent::StreamAckReceived {
+                        stream,
+                        accepted,
+                        reason,
+                    })
+                    .await;
                 Ok(false)
             }
 
@@ -745,17 +818,68 @@ impl ControlServer {
         }
     }
 
+    /// Handle a peer's `stream_request`: refuse what the desktop cannot source, forward the
+    /// rest to the application layer, which owns the source-side lifecycle.
+    async fn handle_stream_request(
+        &self,
+        stream: u8,
+        active: bool,
+        ctx: &ConnectionCtx<'_>,
+        write_half: &mut tokio::net::tcp::OwnedWriteHalf,
+    ) -> Result<()> {
+        let verdict = {
+            let state = self.shared.lock().await;
+            match state.session.as_ref() {
+                Some(session) if session.connection_id == ctx.connection_id => {
+                    evaluate_stream_request(stream, &session.negotiated_caps)
+                }
+                _ => Err(StreamRefusal::NotNegotiated),
+            }
+        };
+
+        match verdict {
+            Ok(()) => {
+                let _ = self
+                    .events
+                    .send(ControlEvent::StreamRequested { stream, active })
+                    .await;
+            }
+            Err(reason) if active => {
+                // A start request the desktop cannot honour is answered rather than left to
+                // hang the phone's ack timeout.
+                tracing::info!(stream, ?reason, "stream request refused");
+                write_line(write_half, &ControlMessage::stream_refuse(stream, reason)).await?;
+            }
+            Err(_) => {} // a stop request for a stream we cannot source is a no-op
+        }
+        Ok(())
+    }
+
     /// Handle a peer's `stream_stop`. Stopping a stream that is not active is a no-op.
     async fn handle_stream_stop(&self, stream: u8, connection_id: u64) {
+        let owns = {
+            let state = self.shared.lock().await;
+            state
+                .session
+                .as_ref()
+                .is_some_and(|s| s.connection_id == connection_id)
+        };
+        if !owns {
+            return;
+        }
+
         let was_active = {
             let mut state = self.shared.lock().await;
             state
                 .session
                 .as_mut()
-                .filter(|s| s.connection_id == connection_id)
                 .is_some_and(|s| s.active_streams.remove(&stream).is_some())
         };
-        if was_active {
+
+        // `active_streams` tracks only streams this desktop sinks. A stream it *sources* —
+        // the speaker — lives in the application layer, so its stop must be forwarded even
+        // though it was never in the map.
+        if was_active || StreamId(stream) == StreamId::SPEAKER {
             tracing::info!(stream, "stream stopped by peer");
             let _ = self.events.send(ControlEvent::StreamStopped { stream }).await;
         }
@@ -1180,6 +1304,32 @@ mod tests {
         for stream in [3, 200] {
             assert_eq!(
                 evaluate_stream_start(stream, &AudioParams::MICROPHONE_PCM, &negotiated()),
+                Err(StreamRefusal::UnsupportedStream),
+                "stream {stream} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn a_negotiated_speaker_request_should_be_forwarded() {
+        assert_eq!(evaluate_stream_request(3, &negotiated()), Ok(()));
+    }
+
+    #[test]
+    fn a_speaker_request_without_the_capability_should_be_refused_as_not_negotiated() {
+        let caps = vec!["cam".to_owned(), "mic".to_owned()];
+        assert_eq!(
+            evaluate_stream_request(3, &caps),
+            Err(StreamRefusal::NotNegotiated)
+        );
+    }
+
+    #[test]
+    fn a_request_for_a_stream_the_desktop_cannot_source_should_be_refused() {
+        // Streams 0-2 are sourced by the phone or synthetic; 200 is unassigned.
+        for stream in [0, 1, 2, 200] {
+            assert_eq!(
+                evaluate_stream_request(stream, &negotiated()),
                 Err(StreamRefusal::UnsupportedStream),
                 "stream {stream} must be refused"
             );

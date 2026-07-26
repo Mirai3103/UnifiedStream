@@ -49,7 +49,7 @@ class MicControllerTest {
 
         mic.setMuted(true)
 
-        assertEquals(MicLevel(), mic.level.value)
+        assertEquals(AudioLevel(), mic.level.value)
     }
 
     @Test
@@ -97,7 +97,7 @@ class MicControllerTest {
         val mic = controller()
         mic.process(ShortArray(960))
 
-        assertEquals(MicLevel(), mic.level.value)
+        assertEquals(AudioLevel(), mic.level.value)
     }
 
     @Test
@@ -117,7 +117,7 @@ class MicControllerTest {
 
         mic.process(loud())
         mic.process(loud())
-        assertEquals("two frames must not move a 3-frame meter", MicLevel(), mic.level.value)
+        assertEquals("two frames must not move a 3-frame meter", AudioLevel(), mic.level.value)
 
         mic.process(loud())
         assertTrue("the third frame must", mic.level.value.peak > 0f)
@@ -149,6 +149,6 @@ class MicControllerTest {
         val mic = controller()
         mic.process(ShortArray(960) { 20_000 })
         mic.resetLevel()
-        assertEquals(MicLevel(), mic.level.value)
+        assertEquals(AudioLevel(), mic.level.value)
     }
 }

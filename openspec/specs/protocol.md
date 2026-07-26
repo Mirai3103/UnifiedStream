@@ -67,7 +67,7 @@ older receivers rejecting the traffic outright.
 | 0      | Synthetic test    | Either        | Implemented                       |
 | 1      | Camera            | Phone → PC    | Reserved for a later change       |
 | 2      | Microphone        | Phone → PC    | Implemented — see §5              |
-| 3      | Speaker           | PC → Phone    | Reserved for a later change       |
+| 3      | Speaker           | PC → Phone    | Implemented — see §6              |
 | 4-255  | —                 | —             | Reserved                          |
 
 Sequence numbers, reassembly buffers, and loss accounting are tracked **per stream**. Loss on one
@@ -313,9 +313,9 @@ Audio `params` fields:
 | Field         | Type   | Description                                        |
 | ------------- | ------ | -------------------------------------------------- |
 | `codec`       | string | `"pcm_s16le"` or `"opus"`. PCM S16LE is the mandatory baseline every peer supports. |
-| `sample_rate` | u32    | Samples per second. `48000` for the microphone.     |
-| `channels`    | u8     | Channel count. `1` for the microphone.              |
-| `frame_ms`    | u32    | Frame duration in milliseconds. `20` for the microphone. |
+| `sample_rate` | u32    | Samples per second. `48000` for the microphone and speaker. |
+| `channels`    | u8     | Channel count. `1` for the microphone, `2` for the speaker. |
+| `frame_ms`    | u32    | Frame duration in milliseconds. `20` for the microphone and speaker. |
 
 Unknown `params` fields MUST be ignored. A `stream_start` for a stream that is already active
 replaces its parameters: the sink re-acks and resets that stream's receive state.
@@ -358,7 +358,7 @@ ignored.
 #### 3.9.4 `stream_request` — sink → source
 
 Asks the source to start or stop a stream, so the receiving side's UI can drive the toggle (the
-desktop's microphone switch, later the phone's speaker switch).
+desktop's microphone switch, the phone's speaker switch).
 
 ```json
 { "type": "stream_request", "stream": 2, "active": true }
@@ -441,3 +441,31 @@ is little-endian and the payload is copied, not parsed field-by-field.
 One self-delimited [Opus](https://datatracker.ietf.org/doc/html/rfc6716) packet per frame, encoding
 20 ms at 48 kHz. Opus is offered in `stream_start` only when the source actually has a working
 encoder; PCM S16LE remains the baseline every peer MUST accept.
+
+## 6. Speaker stream (stream ID 3)
+
+PC → phone audio, carried on stream ID 3 after a `stream_start`/`stream_ack` exchange (§3.9). The
+**desktop** is the source; the phone, as sink, drives its toggle with `stream_request` (§3.9.4).
+
+The framing rules are those of the microphone stream (§5), unchanged: each transport frame carries
+exactly **one audio frame** of the negotiated duration (20 ms for the speaker), the media header
+timestamp is the capture time of the frame's **first sample** in microseconds since session start on
+the sender's clock, packet loss costs exactly one audio frame, and the sender MAY stop transmitting
+without ending the stream — that is how desktop-side mute is implemented. A receiver MUST tolerate
+an arbitrary gap in frames, filling it with silence, and resume playback when frames reappear.
+
+The default speaker format is PCM S16LE, 48 kHz, **stereo** (`channels: 2`), 20 ms frames. The sink
+MUST accept PCM S16LE at both one and two channels; the source SHOULD offer stereo, since system
+audio is stereo.
+
+### 6.1 `pcm_s16le` payload
+
+Raw audio samples, **signed 16-bit little-endian**, interleaved left/right when stereo (§5.1's
+encoding with two channels). At 48 kHz stereo, a 20 ms frame is 960 samples per channel =
+3840 bytes, which fragments into four packets per §2.4.
+
+### 6.2 `opus` payload
+
+One self-delimited Opus packet per frame, encoding 20 ms of stereo at 48 kHz. As for the
+microphone, Opus is offered only when the source has a working encoder and PCM S16LE remains the
+baseline every peer MUST accept.

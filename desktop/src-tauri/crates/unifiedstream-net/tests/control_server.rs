@@ -556,7 +556,32 @@ async fn a_start_request_the_desktop_cannot_source_should_be_refused() {
     client.send(&ControlMessage::Hello(hello())).await;
     assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
 
-    // The desktop sources nothing yet; even the speaker stream is a later change.
+    // The camera is sourced by the phone; asking the desktop to send it is nonsense.
+    client
+        .send(&ControlMessage::StreamRequest {
+            stream: 1,
+            active: true,
+        })
+        .await;
+
+    assert_eq!(
+        client.recv().await,
+        Some(ControlMessage::StreamAck {
+            stream: 1,
+            accepted: false,
+            reason: Some(StreamRefusal::UnsupportedStream),
+        })
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_speaker_request_without_the_capability_should_be_refused_as_not_negotiated() {
+    let (addr, _events) = start(trusting("phone-1"), 47811).await;
+    let mut client = Client::connect(addr).await;
+    // hello() offers cam+mic only, so spk is not in the intersection.
+    client.send(&ControlMessage::Hello(hello())).await;
+    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+
     client
         .send(&ControlMessage::StreamRequest {
             stream: 3,
@@ -569,7 +594,92 @@ async fn a_start_request_the_desktop_cannot_source_should_be_refused() {
         Some(ControlMessage::StreamAck {
             stream: 3,
             accepted: false,
-            reason: Some(StreamRefusal::UnsupportedStream),
+            reason: Some(StreamRefusal::NotNegotiated),
         })
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_negotiated_speaker_request_should_reach_the_application_layer() {
+    let (addr, mut events) = start(trusting("phone-1"), 47811).await;
+    let mut client = Client::connect(addr).await;
+    let speaker_phone = Hello {
+        caps: vec!["cam".to_owned(), "mic".to_owned(), "spk".to_owned()],
+        ..hello()
+    };
+    client.send(&ControlMessage::Hello(speaker_phone)).await;
+    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+
+    client
+        .send(&ControlMessage::StreamRequest {
+            stream: 3,
+            active: true,
+        })
+        .await;
+
+    loop {
+        match tokio::time::timeout(TIMEOUT, events.recv())
+            .await
+            .expect("an event must arrive")
+        {
+            Some(ControlEvent::StreamRequested { stream, active }) => {
+                assert_eq!(stream, 3);
+                assert!(active);
+                break;
+            }
+            Some(_) => continue,
+            None => panic!("event channel closed before the request was forwarded"),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_peers_stream_ack_should_reach_the_application_layer() {
+    let (addr, mut events) = start(trusting("phone-1"), 47811).await;
+    let mut client = Client::connect(addr).await;
+    client.send(&ControlMessage::Hello(hello())).await;
+    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+
+    // The phone answering a desktop-sourced stream_start.
+    client
+        .send(&ControlMessage::StreamAck {
+            stream: 3,
+            accepted: true,
+            reason: None,
+        })
+        .await;
+
+    loop {
+        match tokio::time::timeout(TIMEOUT, events.recv())
+            .await
+            .expect("an event must arrive")
+        {
+            Some(ControlEvent::StreamAckReceived {
+                stream,
+                accepted,
+                reason,
+            }) => {
+                assert_eq!(stream, 3);
+                assert!(accepted);
+                assert_eq!(reason, None);
+                break;
+            }
+            Some(_) => continue,
+            None => panic!("event channel closed before the ack was forwarded"),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_peers_stop_of_a_desktop_sourced_stream_should_reach_the_application_layer() {
+    let (addr, mut events) = start(trusting("phone-1"), 47811).await;
+    let mut client = Client::connect(addr).await;
+    client.send(&ControlMessage::Hello(hello())).await;
+    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+
+    // The speaker never lives in the sink-side stream map, so its stop must still be
+    // forwarded — the desktop's capture would otherwise outlive the phone that ended it.
+    client.send(&ControlMessage::StreamStop { stream: 3 }).await;
+
+    assert_eq!(next_stream_stopped(&mut events).await, 3);
 }

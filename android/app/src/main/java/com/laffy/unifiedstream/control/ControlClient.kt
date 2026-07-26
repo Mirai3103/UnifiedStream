@@ -1,6 +1,7 @@
 package com.laffy.unifiedstream.control
 
 import android.util.Log
+import com.laffy.unifiedstream.protocol.AudioParams
 import com.laffy.unifiedstream.protocol.ControlCodec
 import com.laffy.unifiedstream.protocol.ControlMessage
 import com.laffy.unifiedstream.protocol.ErrorReason
@@ -68,6 +69,12 @@ sealed interface ControlClientEvent {
 
     /** The desktop asked us to start or stop a stream we source, protocol §3.9.4. */
     data class StreamRequested(val stream: Int, val active: Boolean) : ControlClientEvent
+
+    /** The desktop announced a stream it wants to send us, protocol §3.9.1. */
+    data class StreamStartReceived(
+        val stream: Int,
+        val params: AudioParams,
+    ) : ControlClientEvent
 
     /** The desktop ended a stream, protocol §3.9.3. */
     data class StreamStopReceived(val stream: Int) : ControlClientEvent
@@ -334,14 +341,10 @@ class ControlClient(
             )
 
             is ControlMessage.StreamStart ->
-                // The phone sinks nothing yet; the speaker stream is a later change. Refuse
-                // rather than leave the desktop waiting out its ack timeout.
-                outbound.trySend(
-                    ControlMessage.StreamAck(
-                        stream = message.stream,
-                        accepted = false,
-                        reason = StreamRefusal.UNSUPPORTED_STREAM,
-                    ),
+                // The session layer decides: it knows the negotiated capabilities and owns
+                // the playback path that must exist before an accepting ack goes out.
+                _events.emit(
+                    ControlClientEvent.StreamStartReceived(message.stream, message.params),
                 )
 
             is ControlMessage.Hello, is ControlMessage.HelloAck ->

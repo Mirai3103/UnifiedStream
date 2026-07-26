@@ -14,7 +14,7 @@ const val GAIN_MAX: Float = 4.0f
 const val GAIN_DEFAULT: Float = 1.0f
 
 /** Live input level. Both fields are 0..1, computed after gain. */
-data class MicLevel(val rms: Float = 0f, val peak: Float = 0f)
+data class AudioLevel(val rms: Float = 0f, val peak: Float = 0f)
 
 /**
  * The processing stage between capture and transport: software gain with saturation, mute,
@@ -48,10 +48,10 @@ class MicController(
     /** The user's noise-suppression preference. Always false when unavailable. */
     val noiseSuppression: StateFlow<Boolean> = _noiseSuppression.asStateFlow()
 
-    private val _level = MutableStateFlow(MicLevel())
+    private val _level = MutableStateFlow(AudioLevel())
 
     /** Live input level for the UI meter. Zero while muted. */
-    val level: StateFlow<MicLevel> = _level.asStateFlow()
+    val level: StateFlow<AudioLevel> = _level.asStateFlow()
 
     private var framesSinceLevel = 0
 
@@ -64,7 +64,7 @@ class MicController(
     fun setMuted(muted: Boolean) {
         _muted.value = muted
         if (muted) {
-            _level.value = MicLevel()
+            _level.value = AudioLevel()
             framesSinceLevel = 0
         }
     }
@@ -102,7 +102,7 @@ class MicController(
         if (++framesSinceLevel >= levelEveryNFrames) {
             framesSinceLevel = 0
             val rms = kotlin.math.sqrt(sumSquares / samples.size) / Short.MAX_VALUE
-            _level.value = MicLevel(
+            _level.value = AudioLevel(
                 rms = rms.toFloat().coerceIn(0f, 1f),
                 peak = (peak.toFloat() / Short.MAX_VALUE).coerceIn(0f, 1f),
             )
@@ -113,7 +113,7 @@ class MicController(
 
     /** Reset the meter, e.g. when the stream stops. */
     fun resetLevel() {
-        _level.value = MicLevel()
+        _level.value = AudioLevel()
         framesSinceLevel = 0
     }
 }

@@ -229,6 +229,8 @@ class ControlMessageTest {
         val hello_ack_high_session_id: String,
         val expected: Expected,
         val stream_start_mic_pcm: String,
+        val stream_start_speaker_pcm: String,
+        val stream_request_speaker_start: String,
         val stream_ack_accepted: String,
         val stream_ack_refused: String,
         val stream_stop: String,
@@ -311,6 +313,10 @@ class ControlMessageTest {
         val expected = mapOf(
             fixture.stream_start_mic_pcm to
                 ControlMessage.StreamStart(stream = 2, params = AudioParams()),
+            fixture.stream_start_speaker_pcm to
+                ControlMessage.StreamStart(stream = 3, params = AudioParams(channels = 2)),
+            fixture.stream_request_speaker_start to
+                ControlMessage.StreamRequest(stream = 3, active = true),
             fixture.stream_ack_accepted to
                 ControlMessage.StreamAck(stream = 2, accepted = true),
             fixture.stream_ack_refused to

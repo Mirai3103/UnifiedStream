@@ -45,13 +45,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.laffy.unifiedstream.audio.GAIN_MAX
 import com.laffy.unifiedstream.audio.GAIN_MIN
-import com.laffy.unifiedstream.audio.MicLevel
+import com.laffy.unifiedstream.audio.AudioLevel
 import com.laffy.unifiedstream.discovery.DiscoveredDevice
 import com.laffy.unifiedstream.discovery.DiscoveryState
 import com.laffy.unifiedstream.discovery.ManualAddress
 import com.laffy.unifiedstream.protocol.MAX_PAYLOAD
 import com.laffy.unifiedstream.session.ConnectionState
 import com.laffy.unifiedstream.session.MicStreamState
+import com.laffy.unifiedstream.session.SpeakerStreamState
 import com.laffy.unifiedstream.telemetry.LinkQuality
 import com.laffy.unifiedstream.transport.TestStreamReport
 import com.laffy.unifiedstream.ui.theme.Degraded
@@ -64,13 +65,12 @@ import com.laffy.unifiedstream.ui.theme.TextMuted
 /** Features that exist in the UI but have no implementation behind them yet. */
 private val PLANNED_FEATURES = listOf(
     Triple("cam", "Camera", "Stream this camera to the PC"),
-    Triple("spk", "Speaker", "Play PC audio through this phone"),
 )
 
 /** Everything the microphone card renders and calls back into. */
 data class MicControls(
     val state: MicStreamState = MicStreamState.Inactive,
-    val level: MicLevel = MicLevel(),
+    val level: AudioLevel = AudioLevel(),
     val muted: Boolean = false,
     val gain: Float = 1f,
     val noiseSuppression: Boolean = false,
@@ -80,6 +80,17 @@ data class MicControls(
     val onMuteToggle: (Boolean) -> Unit = {},
     val onGainChange: (Float) -> Unit = {},
     val onNoiseSuppressionToggle: (Boolean) -> Unit = {},
+)
+
+/** Everything the speaker card renders and calls back into. */
+data class SpeakerControls(
+    val state: SpeakerStreamState = SpeakerStreamState.Inactive,
+    val level: AudioLevel = AudioLevel(),
+    val muted: Boolean = false,
+    val volume: Float = 1f,
+    val onToggle: (Boolean) -> Unit = {},
+    val onMuteToggle: (Boolean) -> Unit = {},
+    val onVolumeChange: (Float) -> Unit = {},
 )
 
 @Composable
@@ -301,6 +312,7 @@ fun SessionScreen(
     testReport: TestStreamReport?,
     testRunning: Boolean,
     mic: MicControls,
+    speaker: SpeakerControls,
     onStartTestStream: (Int, Int) -> Unit,
     onStopTestStream: () -> Unit,
     onDisconnect: () -> Unit,
@@ -344,12 +356,14 @@ fun SessionScreen(
 
         MicrophoneCard(connected = connection.isConnected, mic = mic)
 
+        SpeakerCard(connected = connection.isConnected, speaker = speaker)
+
         SectionCard(title = "Streams") {
             PLANNED_FEATURES.forEach { (id, label, hint) ->
                 FeatureToggleRow(key = id, label = label, hint = hint)
             }
             Text(
-                text = "Camera and speaker arrive in later changes.",
+                text = "The camera arrives in a later change.",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextMuted,
             )
@@ -534,9 +548,82 @@ private fun MicrophoneCard(connected: Boolean, mic: MicControls) {
     }
 }
 
+@Composable
+private fun SpeakerCard(connected: Boolean, speaker: SpeakerControls) {
+    val streaming = speaker.state is SpeakerStreamState.Active
+    val switchOn = streaming || speaker.state is SpeakerStreamState.Requesting
+
+    SectionCard(
+        title = "Speaker",
+        trailing = {
+            Switch(
+                checked = switchOn,
+                onCheckedChange = speaker.onToggle,
+                enabled = connected,
+            )
+        },
+    ) {
+        when (val state = speaker.state) {
+            is SpeakerStreamState.Active -> {
+                MicLevelMeter(level = speaker.level)
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (speaker.muted) "Muted" else "Playing PC audio",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (speaker.muted) TextMuted else Good,
+                    )
+                    OutlinedButton(onClick = { speaker.onMuteToggle(!speaker.muted) }) {
+                        Text(if (speaker.muted) "Unmute" else "Mute")
+                    }
+                }
+
+                Text(
+                    text = "Volume ${(speaker.volume * 100).toInt()} %",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted,
+                )
+                Slider(
+                    value = speaker.volume,
+                    onValueChange = speaker.onVolumeChange,
+                    valueRange = 0f..1f,
+                )
+            }
+
+            is SpeakerStreamState.Requesting -> Text(
+                text = "Waiting for the PC to start…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextMuted,
+            )
+
+            else -> {
+                val explanation = when {
+                    !connected -> "Connect to a PC to play its audio on this phone."
+                    else -> state.display ?: "Play the PC's audio through this phone."
+                }
+                Text(
+                    text = explanation,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (state is SpeakerStreamState.Refused ||
+                        state is SpeakerStreamState.Error
+                    ) {
+                        Poor
+                    } else {
+                        TextMuted
+                    },
+                )
+            }
+        }
+    }
+}
+
 /** A simple horizontal level meter: RMS as the filled bar, peak as a tick. */
 @Composable
-private fun MicLevelMeter(level: MicLevel) {
+private fun MicLevelMeter(level: AudioLevel) {
     Box(
         Modifier
             .fillMaxWidth()
