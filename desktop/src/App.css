@@ -1,116 +1,374 @@
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
+/*
+ * Dark-first, minimalist, glassmorphism.
+ *
+ * The design is deliberately not shared with the Android app: each follows its own platform's
+ * conventions rather than a lowest-common-denominator system.
+ */
 
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafb);
-}
 :root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
+  --bg: #0b0d12;
+  --bg-glow-a: #1d4ed8;
+  --bg-glow-b: #7c3aed;
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-strong: rgba(255, 255, 255, 0.1);
+  --border: rgba(255, 255, 255, 0.12);
+  --text: #e8eaf0;
+  --text-muted: rgba(232, 234, 240, 0.55);
+  --accent: #60a5fa;
+  --good: #34d399;
+  --degraded: #fbbf24;
+  --poor: #f87171;
 
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
+  color-scheme: dark;
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
 }
 
-.container {
+* {
+  box-sizing: border-box;
+}
+
+body {
   margin: 0;
-  padding-top: 10vh;
+  min-height: 100vh;
+  color: var(--text);
+  background: var(--bg);
+  /* Two soft colour fields behind the glass, so the blur has something to pick up. */
+  background-image:
+    radial-gradient(
+      42rem 30rem at 12% -8%,
+      color-mix(in oklab, var(--bg-glow-a) 40%, transparent),
+      transparent
+    ),
+    radial-gradient(
+      38rem 28rem at 105% 10%,
+      color-mix(in oklab, var(--bg-glow-b) 32%, transparent),
+      transparent
+    );
+  background-attachment: fixed;
+}
+
+.app {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1.75rem 1.25rem 3rem;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  text-align: center;
+  gap: 1rem;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
 }
 
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
+h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.subtitle {
+  margin: 0.15rem 0 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.glass {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+
+.panel {
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.banner {
+  padding: 0.85rem 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.banner-error {
+  border-color: color-mix(in oklab, var(--poor) 45%, transparent);
+  color: var(--poor);
+}
+
+.banner-pairing {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+.grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.grid div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+dd {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.metrics dd {
+  /* Tabular figures stop the dashboard jittering as digits change each second. */
+  font-variant-numeric: tabular-nums;
 }
 
 .row {
   display: flex;
-  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+.controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
 }
 
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
+input[type="number"] {
+  width: 5.5rem;
+  padding: 0.4rem 0.55rem;
   border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="number"]:disabled {
+  opacity: 0.5;
 }
 
 button {
+  padding: 0.45rem 0.9rem;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  color: var(--text);
+  font: inherit;
+  font-weight: 550;
   cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.05s ease;
 }
 
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
+button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
 }
 
-input,
-button {
-  outline: none;
+button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
-#greet-input {
-  margin-right: 5px;
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
+button.primary {
+  background: color-mix(in oklab, var(--accent) 26%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+}
 
-  a:hover {
-    color: #24c8db;
-  }
+button.primary:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--accent) 38%, transparent);
+}
 
-  input,
+.chip {
+  padding: 0.32rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.82rem;
+  font-weight: 550;
+  backdrop-filter: blur(12px);
+}
+
+.chip-connected {
+  border-color: color-mix(in oklab, var(--good) 55%, transparent);
+  color: var(--good);
+}
+
+.chip-connecting,
+.chip-reconnecting {
+  border-color: color-mix(in oklab, var(--degraded) 55%, transparent);
+  color: var(--degraded);
+}
+
+.chip-failed {
+  border-color: color-mix(in oklab, var(--poor) 55%, transparent);
+  color: var(--poor);
+}
+
+.quality {
+  font-size: 0.78rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.quality-good {
+  color: var(--good);
+}
+
+.quality-degraded {
+  color: var(--degraded);
+}
+
+.quality-poor {
+  color: var(--poor);
+}
+
+.quality-unknown {
+  color: var(--text-muted);
+}
+
+.dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.dot-on {
+  background: var(--good);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--good) 22%, transparent);
+}
+
+.features {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.feature {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  /* Dimmed because these toggles are deliberately inert until the media changes land. */
+  opacity: 0.55;
+}
+
+.feature-label {
+  font-weight: 600;
+}
+
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 2.6rem;
+  height: 1.45rem;
+  flex: none;
+}
+
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--border);
+  cursor: not-allowed;
+}
+
+.slider::before {
+  content: "";
+  position: absolute;
+  width: 1.05rem;
+  height: 1.05rem;
+  left: 0.15rem;
+  top: 50%;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.small {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.mono {
+  font-family: ui-monospace, "JetBrains Mono", "SF Mono", monospace;
+}
+
+p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
   button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
+    transition: none;
   }
 }

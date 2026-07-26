@@ -55,6 +55,7 @@ The chosen design: a 16-byte fixed header over plain UDP, modeled on RTP's field
 - `Ver` (2 bits): protocol version, `1` for this change. A peer receiving an unknown version drops the packet.
 - `F` (1 bit): fragment flag — set when this packet is part of a fragmented frame.
 - `M` (1 bit): marker — set on the final fragment of a frame (matching RTP's "end of frame" convention).
+- `Res` (4 bits): reserved, written as zero and ignored on receipt so a later version can claim them.
 - `Stream ID` (8 bits): which logical stream (`0` = synthetic test, `1` = camera, `2` = microphone, `3` = speaker; the rest reserved). This is why one socket serves all three features.
 - `Sequence Number` (16 bits): per-stream, wraps at 65536, used for loss and reorder detection.
 - `Timestamp` (32 bits): microseconds since session start, sender's clock. Wraps at ~71 minutes, which the receiver handles by tracking wrap count.

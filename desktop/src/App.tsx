@@ -1,49 +1,320 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./App.css";
+import {
+  ConnectionState,
+  EVENTS,
+  PairingRequest,
+  StatusSnapshot,
+  TelemetryTick,
+  TestStreamReport,
+  describeFailure,
+  describeState,
+} from "./types";
+
+/** Features that exist in the UI but have no implementation behind them yet. */
+const PLANNED_FEATURES = [
+  { id: "cam", label: "Camera", hint: "Phone camera as a webcam" },
+  { id: "mic", label: "Microphone", hint: "Phone mic as an input device" },
+  { id: "spk", label: "Speaker", hint: "PC audio to phone speakers" },
+] as const;
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [status, setStatus] = useState<StatusSnapshot | null>(null);
+  const [state, setState] = useState<ConnectionState>({ state: "idle" });
+  const [telemetry, setTelemetry] = useState<TelemetryTick | null>(null);
+  const [pairing, setPairing] = useState<PairingRequest | null>(null);
+  const [testReport, setTestReport] = useState<TestStreamReport | null>(null);
+  const [testRunning, setTestRunning] = useState(false);
+  const [frameBytes, setFrameBytes] = useState(4096);
+  const [rateHz, setRateHz] = useState(60);
+  const [error, setError] = useState<string | null>(null);
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  const refresh = useCallback(async () => {
+    try {
+      const snapshot = await invoke<StatusSnapshot>("get_status");
+      setStatus(snapshot);
+      setState(snapshot.state);
+      setTestRunning(snapshot.test_stream_running);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+
+    const unlisteners = [
+      listen<ConnectionState>(EVENTS.connectionState, (event) => {
+        setState(event.payload);
+        // A dead session must not leave stale numbers on the dashboard.
+        if (event.payload.state !== "connected") {
+          setTelemetry(null);
+          setTestReport(null);
+          setTestRunning(false);
+        }
+      }),
+      listen<PairingRequest>(EVENTS.pairingRequest, (event) =>
+        setPairing(event.payload),
+      ),
+      listen<TelemetryTick>(EVENTS.telemetry, (event) =>
+        setTelemetry(event.payload),
+      ),
+      listen<TestStreamReport>(EVENTS.testStream, (event) =>
+        setTestReport(event.payload),
+      ),
+    ];
+
+    return () => {
+      unlisteners.forEach((p) => void p.then((un) => un()));
+    };
+  }, [refresh]);
+
+  const run = useCallback(
+    async (command: string, args?: Record<string, unknown>) => {
+      setError(null);
+      try {
+        await invoke(command, args);
+        await refresh();
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [refresh],
+  );
+
+  const respondPairing = async (accept: boolean) => {
+    setPairing(null);
+    await run("respond_pairing", { accept });
+  };
+
+  const toggleTestStream = async () => {
+    if (testRunning) {
+      await run("stop_test_stream");
+      setTestRunning(false);
+      return;
+    }
+    await run("start_test_stream", {
+      args: { rate_hz: rateHz, frame_bytes: frameBytes },
+    });
+    setTestRunning(true);
+  };
+
+  const connected = state.state === "connected";
+  const quality = telemetry?.quality ?? "unknown";
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <main className="app">
+      <header className="header">
+        <div>
+          <h1>UnifiedStream</h1>
+          <p className="subtitle">
+            {status ? status.device_name : "Starting up…"}
+          </p>
+        </div>
+        <span className={`chip chip-${state.state}`}>
+          {describeState(state)}
+        </span>
+      </header>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+      {error && (
+        <div className="glass banner banner-error" role="alert">
+          {error}
+        </div>
+      )}
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+      {pairing && (
+        <div className="glass banner banner-pairing" role="dialog">
+          <div>
+            <strong>{pairing.device_name}</strong> wants to connect.
+            <span className="muted"> {pairing.device_id.slice(0, 8)}…</span>
+          </div>
+          <div className="row">
+            <button className="primary" onClick={() => respondPairing(true)}>
+              Allow
+            </button>
+            <button onClick={() => respondPairing(false)}>Deny</button>
+          </div>
+        </div>
+      )}
+
+      <section className="glass panel">
+        <div className="panel-head">
+          <h2>This device</h2>
+          <span className={`dot dot-${status?.advertising ? "on" : "off"}`} />
+        </div>
+
+        <dl className="grid">
+          <div>
+            <dt>Control port</dt>
+            <dd>{status?.control_port ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Media port</dt>
+            <dd>{status?.media_port ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Device ID</dt>
+            <dd className="mono small">
+              {status ? `${status.device_id.slice(0, 13)}…` : "—"}
+            </dd>
+          </div>
+        </dl>
+
+        <div className="row">
+          {status?.advertising ? (
+            <button onClick={() => run("stop_advertising")}>
+              Stop advertising
+            </button>
+          ) : (
+            <button className="primary" onClick={() => run("start_advertising")}>
+              Start advertising
+            </button>
+          )}
+          <button onClick={() => run("disconnect")} disabled={!connected}>
+            Disconnect
+          </button>
+          <button onClick={() => run("forget_devices")}>Forget devices</button>
+        </div>
+      </section>
+
+      <section className="glass panel">
+        <div className="panel-head">
+          <h2>Link quality</h2>
+          <span className={`quality quality-${quality}`}>{quality}</span>
+        </div>
+
+        {connected ? (
+          <dl className="grid metrics">
+            <div>
+              <dt>Ping</dt>
+              <dd>
+                {telemetry?.local.rtt_ms != null
+                  ? `${telemetry.local.rtt_ms.toFixed(1)} ms`
+                  : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt>Sent</dt>
+              <dd>{`${(telemetry?.local.tx_mbps ?? 0).toFixed(2)} Mbps`}</dd>
+            </div>
+            <div>
+              <dt>Received</dt>
+              <dd>{`${(telemetry?.local.rx_mbps ?? 0).toFixed(2)} Mbps`}</dd>
+            </div>
+            <div>
+              <dt>Packet loss</dt>
+              <dd>{`${(telemetry?.local.loss_pct ?? 0).toFixed(2)} %`}</dd>
+            </div>
+            <div>
+              <dt>Jitter</dt>
+              <dd>{`${(telemetry?.local.jitter_ms ?? 0).toFixed(2)} ms`}</dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="muted">
+            {state.state === "failed"
+              ? describeFailure(state.reason)
+              : "Connect a phone to see live metrics."}
+          </p>
+        )}
+      </section>
+
+      <section className="glass panel">
+        <div className="panel-head">
+          <h2>Test stream</h2>
+          <span className="muted small">
+            No codecs yet — this proves the transport.
+          </span>
+        </div>
+
+        <div className="row controls">
+          <label>
+            Rate
+            <input
+              type="number"
+              min={1}
+              max={240}
+              value={rateHz}
+              disabled={testRunning}
+              onChange={(e) => setRateHz(Number(e.target.value))}
+            />
+            <span className="muted small">Hz</span>
+          </label>
+          <label>
+            Frame
+            <input
+              type="number"
+              min={8}
+              max={65000}
+              step={256}
+              value={frameBytes}
+              disabled={testRunning}
+              onChange={(e) => setFrameBytes(Number(e.target.value))}
+            />
+            <span className="muted small">bytes</span>
+          </label>
+          <button
+            className={testRunning ? "" : "primary"}
+            onClick={toggleTestStream}
+            disabled={!connected}
+          >
+            {testRunning ? "Stop" : "Start"}
+          </button>
+        </div>
+
+        {frameBytes > 1200 && (
+          <p className="muted small">
+            Above 1200 bytes, so this exercises fragmentation and reassembly.
+          </p>
+        )}
+
+        {testReport && (
+          <dl className="grid metrics">
+            <div>
+              <dt>Verified</dt>
+              <dd>{testReport.verified}</dd>
+            </div>
+            <div>
+              <dt>Missing</dt>
+              <dd>{testReport.missing}</dd>
+            </div>
+            <div>
+              <dt>Corrupt</dt>
+              <dd>{testReport.corrupt}</dd>
+            </div>
+            <div>
+              <dt>Out of order</dt>
+              <dd>{testReport.out_of_order}</dd>
+            </div>
+          </dl>
+        )}
+      </section>
+
+      <section className="glass panel">
+        <div className="panel-head">
+          <h2>Streams</h2>
+        </div>
+        <div className="features">
+          {PLANNED_FEATURES.map((feature) => (
+            <div className="feature" key={feature.id}>
+              <div>
+                <div className="feature-label">{feature.label}</div>
+                <div className="muted small">{feature.hint}</div>
+              </div>
+              <label className="toggle" title="Not available yet">
+                <input type="checkbox" disabled checked={false} readOnly />
+                <span className="slider" />
+              </label>
+            </div>
+          ))}
+        </div>
+        <p className="muted small">
+          Camera, microphone, and speaker arrive in later changes. The network
+          foundation they run on is what this build ships.
+        </p>
+      </section>
     </main>
   );
 }

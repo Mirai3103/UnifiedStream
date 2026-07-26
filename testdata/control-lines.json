@@ -1,0 +1,9 @@
+{
+  "description": "Control lines exactly as the Rust implementation emits them. The Kotlin suite parses these to prove it reads real desktop output, not just its own encoder. Guards the interop bug where a session id above i64::MAX was emitted as a JSON number and overflowed Kotlin's Long, silently breaking roughly every second handshake.",
+  "hello_ack_high_session_id": "{\"type\":\"hello_ack\",\"version\":1,\"device_id\":\"desktop-1\",\"device_name\":\"cachyos-x8664\",\"caps\":[\"cam\",\"mic\",\"spk\"],\"session_id\":\"13597845101738855385\",\"media_port\":47811}",
+  "expected": {
+    "session_id_decimal": "13597845101738855385",
+    "session_id_as_signed_long_bits": "-4848898971970696231",
+    "media_port": 47811
+  }
+}

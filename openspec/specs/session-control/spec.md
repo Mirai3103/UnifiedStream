@@ -1,4 +1,12 @@
-## ADDED Requirements
+# Session Control Specification
+
+## Purpose
+
+The TCP control channel: handshake and capability negotiation, pairing and trust, the heartbeat that detects a dead peer, the connection state machine both apps render from, reconnection, and teardown.
+
+See `openspec/specs/protocol.md` for the normative wire format these requirements are implemented against.
+
+## Requirements
 
 ### Requirement: Control channel transport
 
@@ -41,6 +49,44 @@ The phone and desktop SHALL perform a handshake that exchanges protocol versions
 - **WHEN** a peer receives a media packet for a session identifier that has not been established
 - **THEN** it discards the packet without processing
 
+### Requirement: Session identifiers are carried as decimal strings
+
+The session identifier SHALL be encoded as a decimal string wherever it crosses a serialization boundary, never as a JSON number.
+
+The identifier uses the full unsigned 64-bit range. Roughly half of all values exceed the signed 64-bit maximum and overflow a signed reader, and any value above 2^53 loses precision in a reader whose numbers are IEEE doubles. Both readers exist in this system — the phone parses into a signed 64-bit integer and the desktop UI into a double.
+
+#### Scenario: An identifier above the signed 64-bit range survives the handshake
+
+- **WHEN** the desktop issues a session identifier greater than 2^63 and sends it in `hello_ack`
+- **THEN** the phone parses the message successfully and recovers the identifier exactly
+- **AND** the session is established
+
+#### Scenario: A resumed identifier uses the same encoding
+
+- **WHEN** the phone sends a `hello` carrying `resume_session_id`
+- **THEN** the value is encoded as a decimal string
+
+#### Scenario: The identifier reaches the desktop UI without rounding
+
+- **WHEN** the connection state carrying a session identifier is delivered to the desktop UI
+- **THEN** the identifier is encoded as a decimal string rather than a number
+
+### Requirement: Media address exchange
+
+The `hello` message SHALL be able to carry the UDP port the phone bound for media, so the desktop can address the phone without waiting for an inbound datagram.
+
+#### Scenario: The desktop learns where to send media from the handshake
+
+- **WHEN** the phone sends a `hello` containing its media port
+- **THEN** the desktop combines that port with the phone's control-channel address to form the media destination
+- **AND** may send media before receiving any datagram from the phone
+
+#### Scenario: The media port is optional
+
+- **WHEN** a `hello` arrives without a media port
+- **THEN** the handshake still succeeds
+- **AND** the desktop sends media only after learning the phone's address from an inbound datagram
+
 ### Requirement: Explicit pairing confirmation
 
 The desktop SHALL require explicit user confirmation before a newly connecting phone is granted a session.
@@ -76,6 +122,28 @@ The desktop SHALL maintain at most one active session at a time.
 - **WHEN** a phone sends a `hello` while another session is already established
 - **THEN** the desktop replies with an `error` message with reason `busy` and closes the new connection
 - **AND** the existing session is unaffected
+
+### Requirement: A phone may resume its own session
+
+The desktop SHALL allow a `hello` to displace the active session when, and only when, both the resumed session identifier and the device identifier match the session currently held.
+
+TCP may not yet have noticed that the previous connection died, so without this a phone reconnecting after a network drop is refused `busy` by its own stale socket — a condition it can never clear, which would make the reconnect path useless in exactly the case it exists for.
+
+#### Scenario: The same phone resumes after a network drop
+
+- **WHEN** a phone sends a `hello` whose `resume_session_id` and device identifier both match the active session
+- **THEN** the desktop accepts it, replaces the stale connection, and replies with a `hello_ack` carrying the same session identifier
+- **AND** the phone is not prompted for pairing again
+
+#### Scenario: A different device may not steal a session by naming its identifier
+
+- **WHEN** a `hello` carries a `resume_session_id` matching the active session but a different device identifier
+- **THEN** the desktop refuses it with reason `busy`
+
+#### Scenario: An unrecognised session identifier is refused
+
+- **WHEN** a `hello` carries a `resume_session_id` that does not match the active session
+- **THEN** the desktop refuses it with reason `busy`
 
 ### Requirement: Heartbeat and round-trip measurement
 

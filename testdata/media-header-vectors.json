@@ -1,0 +1,67 @@
+{
+  "description": "Cross-implementation media header vectors. Both the Rust (unifiedstream-net) and Kotlin (com.laffy.unifiedstream.protocol) test suites parse these and must agree on every field. See openspec/specs/protocol.md section 2.",
+  "protocol_version": 1,
+  "header_len": 16,
+  "vectors": [
+    {
+      "name": "camera_fragment_not_final",
+      "hex": "60011234deadbeef0123456789abcdef",
+      "stream": 1,
+      "sequence": 4660,
+      "timestamp_us": 3735928559,
+      "session_id": "81985529216486895",
+      "fragment": true,
+      "marker": false
+    },
+    {
+      "name": "test_stream_zeroes",
+      "hex": "50000000000000000000000000000000",
+      "stream": 0,
+      "sequence": 0,
+      "timestamp_us": 0,
+      "session_id": "0",
+      "fragment": false,
+      "marker": true
+    },
+    {
+      "name": "all_fields_maximum",
+      "hex": "70ffffffffffffffffffffffffffffff",
+      "stream": 255,
+      "sequence": 65535,
+      "timestamp_us": 4294967295,
+      "session_id": "18446744073709551615",
+      "fragment": true,
+      "marker": true
+    },
+    {
+      "name": "speaker_single_packet",
+      "hex": "50030001000f4240deadbeefcafebabe",
+      "stream": 3,
+      "sequence": 1,
+      "timestamp_us": 1000000,
+      "session_id": "16045690984503098046",
+      "fragment": false,
+      "marker": true
+    },
+    {
+      "name": "microphone_sequence_wrap",
+      "hex": "4002ffff7fffffff8000000000000000",
+      "stream": 2,
+      "sequence": 65535,
+      "timestamp_us": 2147483647,
+      "session_id": "9223372036854775808",
+      "fragment": false,
+      "marker": false
+    },
+    {
+      "name": "high_bit_session_id",
+      "hex": "600100ff00000001ffffffff00000000",
+      "stream": 1,
+      "sequence": 255,
+      "timestamp_us": 1,
+      "session_id": "18446744069414584320",
+      "fragment": true,
+      "marker": false
+    }
+  ]
+}

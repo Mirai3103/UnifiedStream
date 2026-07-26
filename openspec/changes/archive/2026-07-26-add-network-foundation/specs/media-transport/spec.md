@@ -2,7 +2,7 @@
 
 ### Requirement: Media packet header format
 
-The system SHALL prefix every media datagram with a 16-byte big-endian header containing a 2-bit protocol version, a fragment flag, a marker bit, a 3-bit reserved field, an 8-bit stream identifier, a 16-bit sequence number, a 32-bit microsecond timestamp, and a 64-bit session identifier.
+The system SHALL prefix every media datagram with a 16-byte big-endian header containing a 2-bit protocol version, a fragment flag, a marker bit, a 4-bit reserved field, an 8-bit stream identifier, a 16-bit sequence number, a 32-bit microsecond timestamp, and a 64-bit session identifier.
 
 #### Scenario: Header round-trips
 
@@ -68,6 +68,41 @@ The transport SHALL fragment payloads exceeding 1200 bytes into multiple packets
 
 - **WHEN** a frame of 1200 bytes or fewer is sent
 - **THEN** it is transmitted as a single packet with the fragment flag clear and the marker bit set
+
+### Requirement: Frame-start synchronisation
+
+A receiver SHALL discard fragmented packets until it has established a frame boundary, so that a frame missing its leading fragments is never delivered as if it were whole.
+
+A receiver that joins mid-frame — because the first packet it saw was reordered, or because it attached to a stream already in progress — cannot distinguish a frame's first fragment from its third. Concatenating whatever arrives produces a frame with a missing head, which is silent corruption and strictly worse than dropping the frame.
+
+#### Scenario: Joining mid-frame does not deliver a truncated frame
+
+- **WHEN** a receiver's first packets on a stream are the second and third fragments of a frame, and the first fragment is never seen
+- **THEN** no frame is delivered for that timestamp
+- **AND** the frame is counted as incomplete
+
+#### Scenario: An unfragmented packet establishes a boundary
+
+- **WHEN** a packet arrives with the fragment flag clear
+- **THEN** it is delivered as a complete frame on its own
+- **AND** subsequent fragmented packets are eligible for reassembly
+
+#### Scenario: A marker establishes a boundary
+
+- **WHEN** a receiver has not yet established a boundary and a packet arrives with the marker bit set
+- **THEN** that frame is discarded as incomplete
+- **AND** the next packet is treated as the start of a new frame
+
+#### Scenario: Stream start establishes a boundary
+
+- **WHEN** the first packet released on a stream carries sequence number 0
+- **THEN** it is treated as a frame start, because senders begin every stream's counter at zero
+
+#### Scenario: The receiver recovers on the next whole frame
+
+- **WHEN** a receiver has discarded a frame it joined mid-way
+- **AND** a subsequent frame arrives complete from its first fragment
+- **THEN** that frame is reassembled and delivered
 
 ### Requirement: Sequence numbering and wrap handling
 

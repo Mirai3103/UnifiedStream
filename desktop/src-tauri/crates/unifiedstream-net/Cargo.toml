@@ -1,0 +1,23 @@
+[package]
+name = "unifiedstream-net"
+description = "UnifiedStream discovery, control, and media transport. No Tauri dependency."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio.workspace = true
+mdns-sd.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+hostname.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "time", "test-util"] }
+
+[lints]
+workspace = true
