@@ -7,7 +7,7 @@
 //! The TCP connection doubles as the liveness signal: if it drops, the session is over, with no
 //! timeout guessing required.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -19,8 +19,8 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::error::{NetError, Result};
 use crate::protocol::{
-    intersect_caps, ControlMessage, ErrorReason, Hello, HelloAck, TelemetryReport,
-    PROTOCOL_VERSION,
+    caps, intersect_caps, AudioCodec, AudioParams, ControlMessage, ErrorReason, Hello, HelloAck,
+    StreamId, StreamRefusal, TelemetryReport, PROTOCOL_VERSION,
 };
 use crate::session::{ConnectionState, FailureReason};
 
@@ -32,6 +32,40 @@ pub const HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_se
 
 /// Unanswered heartbeats tolerated before the peer is declared unreachable.
 pub const MAX_MISSED_HEARTBEATS: u32 = 3;
+
+/// How long the application layer may take to prepare a sink before a `stream_start` is
+/// refused as an internal failure.
+pub const STREAM_START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Decide how to answer a `stream_start`, without touching the network.
+///
+/// Pure so every refusal branch is unit-testable. Codec support beyond "a codec this build has
+/// never heard of" is the application layer's call — it owns the decoder.
+///
+/// # Errors
+///
+/// Returns the [`StreamRefusal`] to put in the `stream_ack` when the stream must be refused.
+pub fn evaluate_stream_start(
+    stream: u8,
+    params: &AudioParams,
+    negotiated_caps: &[String],
+) -> std::result::Result<(), StreamRefusal> {
+    // Streams the desktop can sink, and the capability token that gates each.
+    let required_cap = match StreamId(stream) {
+        StreamId::CAMERA => caps::CAMERA,
+        StreamId::MICROPHONE => caps::MICROPHONE,
+        // The desktop is the *source* for the speaker stream; a phone offering to send it —
+        // or any id we have never heard of — is refused the same way.
+        _ => return Err(StreamRefusal::UnsupportedStream),
+    };
+    if !negotiated_caps.iter().any(|c| c == required_cap) {
+        return Err(StreamRefusal::NotNegotiated);
+    }
+    if matches!(params.codec, AudioCodec::Unknown) {
+        return Err(StreamRefusal::UnsupportedCodec);
+    }
+    Ok(())
+}
 
 /// Device ids the user has already approved.
 ///
@@ -189,6 +223,25 @@ pub enum ControlEvent {
     RttSample(f64),
     /// The peer disconnected cleanly.
     PeerLeft,
+    /// The peer announced a stream it wants to send, and protocol-level checks passed.
+    ///
+    /// Answer through `respond` once the sink is ready (`Ok`) or has failed (`Err`). Dropping
+    /// the responder, or taking longer than [`STREAM_START_TIMEOUT`], refuses the stream as an
+    /// internal failure. The accepting `stream_ack` is sent only after a successful answer, so
+    /// media never arrives before the sink exists.
+    StreamStartRequested {
+        /// Stream identifier, protocol §2.2.
+        stream: u8,
+        /// Format the peer will send.
+        params: AudioParams,
+        /// Send `Ok(())` to accept, or the refusal to report.
+        respond: oneshot::Sender<std::result::Result<(), StreamRefusal>>,
+    },
+    /// An active stream ended — peer stop, restart with new parameters, or session teardown.
+    StreamStopped {
+        /// Stream identifier that is no longer active.
+        stream: u8,
+    },
 }
 
 /// Everything the control server needs to answer a handshake.
@@ -228,6 +281,8 @@ struct ActiveSession {
     peer_media_addr: Option<SocketAddr>,
     /// Outbound queue of the connection serving this session.
     outbound: mpsc::Sender<ControlMessage>,
+    /// Streams the peer has started and we have accepted, with their negotiated parameters.
+    active_streams: HashMap<u8, AudioParams>,
 }
 
 /// Handle to a running control server.
@@ -301,6 +356,29 @@ impl ControlHandle {
             .as_ref()
             .map(|s| s.negotiated_caps.clone())
             .unwrap_or_default()
+    }
+
+    /// Ask the peer to start or stop a stream it sources, protocol §3.9.4.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NetError::NoSession`] if no peer is connected.
+    pub async fn request_stream(&self, stream: StreamId, active: bool) -> Result<()> {
+        self.send(ControlMessage::StreamRequest {
+            stream: stream.get(),
+            active,
+        })
+        .await
+    }
+
+    /// Parameters of an accepted stream, if it is currently active.
+    pub async fn stream_params(&self, stream: StreamId) -> Option<AudioParams> {
+        self.shared
+            .lock()
+            .await
+            .session
+            .as_ref()
+            .and_then(|s| s.active_streams.get(&stream.get()).copied())
     }
 }
 
@@ -422,8 +500,18 @@ impl ControlServer {
         if !owns {
             return;
         }
-        state.session = None;
+        let stopped: Vec<u8> = state
+            .session
+            .take()
+            .map(|s| s.active_streams.into_keys().collect())
+            .unwrap_or_default();
         drop(state);
+
+        // A dead session implies a stop for every stream it carried, with no `stream_stop`
+        // messages required — the sink must not outlive the peer feeding it.
+        for stream in stopped {
+            let _ = self.events.send(ControlEvent::StreamStopped { stream }).await;
+        }
 
         let _ = self
             .events
@@ -544,11 +632,132 @@ impl ControlServer {
                 Ok(true)
             }
 
+            ControlMessage::StreamStart { stream, params } => {
+                self.handle_stream_start(stream, params, ctx, write_half)
+                    .await?;
+                Ok(false)
+            }
+
+            ControlMessage::StreamStop { stream } => {
+                self.handle_stream_stop(stream, ctx.connection_id).await;
+                Ok(false)
+            }
+
+            ControlMessage::StreamRequest { stream, active } => {
+                // The desktop sources only the speaker stream, which is a later change; until
+                // then every start request is answered rather than left hanging.
+                if active {
+                    let reply =
+                        ControlMessage::stream_refuse(stream, StreamRefusal::UnsupportedStream);
+                    write_line(write_half, &reply).await?;
+                }
+                Ok(false)
+            }
+
+            ControlMessage::StreamAck { stream, accepted, .. } => {
+                // Answers a `stream_start` the desktop sent; it sends none until the speaker
+                // stream exists.
+                tracing::debug!(%peer_addr, stream, accepted, "ignoring stream_ack");
+                Ok(false)
+            }
+
             ControlMessage::HelloAck(_) | ControlMessage::Error(_) => {
                 // The desktop is the server; these are client-side messages.
                 tracing::debug!(%peer_addr, "ignoring client-side message");
                 Ok(false)
             }
+        }
+    }
+
+    /// Validate a `stream_start`, let the application layer stand up the sink, and answer.
+    async fn handle_stream_start(
+        &self,
+        stream: u8,
+        params: AudioParams,
+        ctx: &ConnectionCtx<'_>,
+        write_half: &mut tokio::net::tcp::OwnedWriteHalf,
+    ) -> Result<()> {
+        let verdict = {
+            let state = self.shared.lock().await;
+            match state.session.as_ref() {
+                // Only the connection that owns the session may open streams on it.
+                Some(session) if session.connection_id == ctx.connection_id => {
+                    evaluate_stream_start(stream, &params, &session.negotiated_caps)
+                }
+                _ => Err(StreamRefusal::NotNegotiated),
+            }
+        };
+
+        if let Err(reason) = verdict {
+            tracing::info!(stream, ?reason, "stream refused");
+            write_line(write_half, &ControlMessage::stream_refuse(stream, reason)).await?;
+            return Ok(());
+        }
+
+        // A restart replaces the old stream: tear its sink down before standing up the new one
+        // so the application layer never juggles two generations of the same stream.
+        let was_active = {
+            let mut state = self.shared.lock().await;
+            state
+                .session
+                .as_mut()
+                .is_some_and(|s| s.active_streams.remove(&stream).is_some())
+        };
+        if was_active {
+            let _ = self.events.send(ControlEvent::StreamStopped { stream }).await;
+        }
+
+        let (respond, ready) = oneshot::channel();
+        let requested = ControlEvent::StreamStartRequested {
+            stream,
+            params,
+            respond,
+        };
+        if self.events.send(requested).await.is_err() {
+            // Nobody is listening, so nobody can build a sink.
+            write_line(
+                write_half,
+                &ControlMessage::stream_refuse(stream, StreamRefusal::Internal),
+            )
+            .await?;
+            return Ok(());
+        }
+
+        let answer = match tokio::time::timeout(STREAM_START_TIMEOUT, ready).await {
+            Ok(Ok(answer)) => answer,
+            Ok(Err(_)) | Err(_) => Err(StreamRefusal::Internal),
+        };
+
+        match answer {
+            Ok(()) => {
+                let mut state = self.shared.lock().await;
+                if let Some(session) = state.session.as_mut() {
+                    session.active_streams.insert(stream, params);
+                }
+                drop(state);
+                tracing::info!(stream, ?params, "stream accepted");
+                write_line(write_half, &ControlMessage::stream_accept(stream)).await
+            }
+            Err(reason) => {
+                tracing::warn!(stream, ?reason, "sink refused stream");
+                write_line(write_half, &ControlMessage::stream_refuse(stream, reason)).await
+            }
+        }
+    }
+
+    /// Handle a peer's `stream_stop`. Stopping a stream that is not active is a no-op.
+    async fn handle_stream_stop(&self, stream: u8, connection_id: u64) {
+        let was_active = {
+            let mut state = self.shared.lock().await;
+            state
+                .session
+                .as_mut()
+                .filter(|s| s.connection_id == connection_id)
+                .is_some_and(|s| s.active_streams.remove(&stream).is_some())
+        };
+        if was_active {
+            tracing::info!(stream, "stream stopped by peer");
+            let _ = self.events.send(ControlEvent::StreamStopped { stream }).await;
         }
     }
 
@@ -650,18 +859,34 @@ impl ControlServer {
         };
         write_line(write_half, &ControlMessage::HelloAck(ack)).await?;
 
-        self.shared.lock().await.session = Some(ActiveSession {
-            session_id,
-            connection_id: ctx.connection_id,
-            peer_id: hello.device_id.clone(),
-            peer_name: hello.device_name.clone(),
-            negotiated_caps: negotiated_caps.clone(),
-            peer_addr: ctx.peer_addr,
-            peer_media_addr: hello
-                .media_port
-                .map(|port| SocketAddr::new(ctx.peer_addr.ip(), port)),
-            outbound: ctx.out_tx.clone(),
-        });
+        // A resume displaces the previous connection's session. Its streams stop with it: the
+        // phone re-announces anything it is still sending, and a fresh `stream_start` rebuilds
+        // the sink, so nothing is left wired to a dead connection.
+        let displaced: Vec<u8> = {
+            let mut state = self.shared.lock().await;
+            let displaced = state
+                .session
+                .take()
+                .map(|s| s.active_streams.into_keys().collect())
+                .unwrap_or_default();
+            state.session = Some(ActiveSession {
+                session_id,
+                connection_id: ctx.connection_id,
+                peer_id: hello.device_id.clone(),
+                peer_name: hello.device_name.clone(),
+                negotiated_caps: negotiated_caps.clone(),
+                peer_addr: ctx.peer_addr,
+                peer_media_addr: hello
+                    .media_port
+                    .map(|port| SocketAddr::new(ctx.peer_addr.ip(), port)),
+                outbound: ctx.out_tx.clone(),
+                active_streams: HashMap::new(),
+            });
+            displaced
+        };
+        for stream in displaced {
+            let _ = self.events.send(ControlEvent::StreamStopped { stream }).await;
+        }
 
         tracing::info!(
             session_id,
@@ -914,6 +1139,51 @@ mod tests {
         let first = now_micros();
         std::thread::sleep(std::time::Duration::from_millis(2));
         assert!(now_micros() > first);
+    }
+
+    fn negotiated() -> Vec<String> {
+        vec!["cam".to_owned(), "mic".to_owned(), "spk".to_owned()]
+    }
+
+    #[test]
+    fn a_negotiated_microphone_stream_should_be_accepted() {
+        assert_eq!(
+            evaluate_stream_start(2, &AudioParams::MICROPHONE_PCM, &negotiated()),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn a_stream_without_its_capability_should_be_refused_as_not_negotiated() {
+        let caps = vec!["cam".to_owned()];
+        assert_eq!(
+            evaluate_stream_start(2, &AudioParams::MICROPHONE_PCM, &caps),
+            Err(StreamRefusal::NotNegotiated)
+        );
+    }
+
+    #[test]
+    fn an_unknown_codec_should_be_refused_as_unsupported_codec() {
+        let params = AudioParams {
+            codec: AudioCodec::Unknown,
+            ..AudioParams::MICROPHONE_PCM
+        };
+        assert_eq!(
+            evaluate_stream_start(2, &params, &negotiated()),
+            Err(StreamRefusal::UnsupportedCodec)
+        );
+    }
+
+    #[test]
+    fn a_stream_the_desktop_cannot_sink_should_be_refused_as_unsupported() {
+        // Stream 3 is sourced by the desktop, and 200 is unassigned; a phone may offer neither.
+        for stream in [3, 200] {
+            assert_eq!(
+                evaluate_stream_start(stream, &AudioParams::MICROPHONE_PCM, &negotiated()),
+                Err(StreamRefusal::UnsupportedStream),
+                "stream {stream} must be refused"
+            );
+        }
     }
 
     #[test]

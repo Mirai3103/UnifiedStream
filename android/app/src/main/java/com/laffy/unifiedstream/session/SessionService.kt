@@ -54,11 +54,7 @@ class SessionService : android.app.Service() {
         val notification = buildNotification(peerName)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
-                )
+                startForeground(NOTIFICATION_ID, notification, foregroundServiceTypes())
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
@@ -68,6 +64,23 @@ class SessionService : android.app.Service() {
             Log.w(TAG, "could not enter the foreground", e)
             stopSelf()
         }
+    }
+
+    /**
+     * The foreground types this service may declare right now.
+     *
+     * The microphone type is included only when `RECORD_AUDIO` is granted — declaring a type
+     * whose permission is missing throws on API 34+, and the session must still be able to run
+     * without a mic.
+     */
+    private fun foregroundServiceTypes(): Int {
+        var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        val hasRecordAudio = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && hasRecordAudio) {
+            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        }
+        return types
     }
 
     private fun buildNotification(peerName: String): Notification {

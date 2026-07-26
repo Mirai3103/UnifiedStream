@@ -175,6 +175,65 @@ impl Default for TelemetryReport {
     }
 }
 
+/// Audio codec named in stream parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum AudioCodec {
+    /// Raw signed 16-bit little-endian samples. The mandatory baseline every peer decodes.
+    PcmS16le,
+    /// One Opus packet per frame. Offered only when the source has a working encoder.
+    Opus,
+    /// A codec this build does not know.
+    ///
+    /// Deserialized rather than rejected so the sink can answer with a `stream_ack` refusal
+    /// (`unsupported_codec`) instead of treating the whole line as malformed.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Format parameters for an audio stream, protocol §3.9.1.
+///
+/// Unknown fields are ignored on receipt; video streams will define their own parameter set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioParams {
+    /// Payload encoding.
+    pub codec: AudioCodec,
+    /// Samples per second.
+    pub sample_rate: u32,
+    /// Channel count.
+    pub channels: u8,
+    /// Frame duration in milliseconds.
+    pub frame_ms: u32,
+}
+
+impl AudioParams {
+    /// The microphone baseline: PCM S16LE, 48 kHz, mono, 20 ms frames.
+    pub const MICROPHONE_PCM: Self = Self {
+        codec: AudioCodec::PcmS16le,
+        sample_rate: 48_000,
+        channels: 1,
+        frame_ms: 20,
+    };
+}
+
+/// Why a `stream_start` or `stream_request` was refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum StreamRefusal {
+    /// The stream's capability token is not in the negotiated set.
+    NotNegotiated,
+    /// The sink cannot decode the offered codec.
+    UnsupportedCodec,
+    /// The sink does not recognise the stream identifier.
+    UnsupportedStream,
+    /// The sink cannot take another stream right now.
+    Busy,
+    /// The sink failed locally — e.g. its audio system is unavailable.
+    Internal,
+}
+
 /// A single control-channel message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -198,6 +257,35 @@ pub enum ControlMessage {
     },
     /// Periodic link-quality report.
     Telemetry(TelemetryReport),
+    /// Source announces a stream it wants to send, protocol §3.9.1.
+    StreamStart {
+        /// Stream identifier, protocol §2.2.
+        stream: u8,
+        /// Format the source will send.
+        params: AudioParams,
+    },
+    /// Sink accepts or refuses a `stream_start`, protocol §3.9.2.
+    StreamAck {
+        /// Stream identifier being answered.
+        stream: u8,
+        /// Whether media may flow.
+        accepted: bool,
+        /// Why not. Present exactly when `accepted` is false.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<StreamRefusal>,
+    },
+    /// Either side ends a stream, protocol §3.9.3.
+    StreamStop {
+        /// Stream identifier to close.
+        stream: u8,
+    },
+    /// Sink asks the source to start or stop a stream, protocol §3.9.4.
+    StreamRequest {
+        /// Stream identifier.
+        stream: u8,
+        /// `true` to request a start, `false` a stop.
+        active: bool,
+    },
     /// Clean session teardown.
     Bye,
 }
@@ -211,6 +299,26 @@ impl ControlMessage {
             message: message.into(),
             supported_version: None,
         })
+    }
+
+    /// Build an accepting `stream_ack`.
+    #[must_use]
+    pub const fn stream_accept(stream: u8) -> Self {
+        Self::StreamAck {
+            stream,
+            accepted: true,
+            reason: None,
+        }
+    }
+
+    /// Build a refusing `stream_ack`.
+    #[must_use]
+    pub const fn stream_refuse(stream: u8, reason: StreamRefusal) -> Self {
+        Self::StreamAck {
+            stream,
+            accepted: false,
+            reason: Some(reason),
+        }
     }
 
     /// Build a version-mismatch error carrying the version this build supports.
@@ -384,6 +492,82 @@ mod tests {
         ] {
             assert!(reason.is_fatal(), "{reason:?} must close the connection");
         }
+    }
+
+    #[test]
+    fn stream_start_should_round_trip_through_a_line() {
+        let original = ControlMessage::StreamStart {
+            stream: 2,
+            params: AudioParams::MICROPHONE_PCM,
+        };
+        let parsed = ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
+        assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn stream_start_should_serialize_the_documented_shape() {
+        let line = ControlMessage::StreamStart {
+            stream: 2,
+            params: AudioParams::MICROPHONE_PCM,
+        }
+        .to_line()
+        .expect("encode");
+        assert_eq!(
+            line.trim_end(),
+            r#"{"type":"stream_start","stream":2,"params":{"codec":"pcm_s16le","sample_rate":48000,"channels":1,"frame_ms":20}}"#
+        );
+    }
+
+    #[test]
+    fn an_accepting_stream_ack_should_omit_the_reason() {
+        let line = ControlMessage::stream_accept(2).to_line().expect("encode");
+        assert_eq!(line.trim_end(), r#"{"type":"stream_ack","stream":2,"accepted":true}"#);
+    }
+
+    #[test]
+    fn a_refusing_stream_ack_should_carry_its_reason() {
+        let original = ControlMessage::stream_refuse(2, StreamRefusal::UnsupportedCodec);
+        let line = original.to_line().expect("encode");
+        assert_eq!(
+            line.trim_end(),
+            r#"{"type":"stream_ack","stream":2,"accepted":false,"reason":"unsupported_codec"}"#
+        );
+        let parsed = ControlMessage::from_line(&line).expect("decode");
+        assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn stream_stop_should_round_trip_through_a_line() {
+        let original = ControlMessage::StreamStop { stream: 2 };
+        let parsed = ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
+        assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn stream_request_should_round_trip_both_directions_of_intent() {
+        for active in [true, false] {
+            let original = ControlMessage::StreamRequest { stream: 2, active };
+            let parsed =
+                ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
+            assert_eq!(parsed, original);
+        }
+    }
+
+    #[test]
+    fn an_unknown_codec_should_parse_rather_than_reject_the_line() {
+        // The sink answers `unsupported_codec`; a parse failure would wrongly read as malformed.
+        let line = r#"{"type":"stream_start","stream":2,"params":{"codec":"flac","sample_rate":48000,"channels":1,"frame_ms":20}}"#;
+        let parsed = ControlMessage::from_line(line).expect("must parse");
+        let ControlMessage::StreamStart { params, .. } = parsed else {
+            panic!("expected stream_start");
+        };
+        assert_eq!(params.codec, AudioCodec::Unknown);
+    }
+
+    #[test]
+    fn stream_params_should_tolerate_unknown_fields() {
+        let line = r#"{"type":"stream_start","stream":2,"params":{"codec":"opus","sample_rate":48000,"channels":1,"frame_ms":20,"bitrate":32000}}"#;
+        assert!(ControlMessage::from_line(line).is_ok());
     }
 
     #[test]

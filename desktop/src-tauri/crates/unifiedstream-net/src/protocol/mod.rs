@@ -11,8 +11,8 @@ pub use header::{
     seq_distance, seq_is_newer, MediaHeader, StreamId, HEADER_LEN, MAX_PAYLOAD, PROTOCOL_VERSION,
 };
 pub use messages::{
-    caps, intersect_caps, ControlMessage, ErrorMessage, ErrorReason, Hello, HelloAck,
-    TelemetryReport,
+    caps, intersect_caps, AudioCodec, AudioParams, ControlMessage, ErrorMessage, ErrorReason,
+    Hello, HelloAck, StreamRefusal, TelemetryReport,
 };
 pub(crate) use messages::u64_string;
 

@@ -152,12 +152,87 @@ class ControlMessageTest {
         }
     }
 
+    // --- Stream lifecycle --------------------------------------------------------------------
+
+    @Test
+    fun streamStartShouldRoundTripThroughALine() {
+        val start = ControlMessage.StreamStart(stream = 2, params = AudioParams())
+        assertEquals(start, ControlCodec.fromLine(ControlCodec.toLine(start)))
+    }
+
+    @Test
+    fun streamStartShouldSerializeTheDocumentedShape() {
+        val line = ControlCodec.toLine(ControlMessage.StreamStart(stream = 2, params = AudioParams()))
+        assertEquals(
+            """{"type":"stream_start","stream":2,"params":{"codec":"pcm_s16le","sample_rate":48000,"channels":1,"frame_ms":20}}""",
+            line.trim(),
+        )
+    }
+
+    @Test
+    fun anAcceptingStreamAckShouldOmitTheReason() {
+        val line = ControlCodec.toLine(ControlMessage.StreamAck(stream = 2, accepted = true))
+        assertEquals("""{"type":"stream_ack","stream":2,"accepted":true}""", line.trim())
+    }
+
+    @Test
+    fun aRefusingStreamAckShouldCarryItsReason() {
+        val refusal = ControlMessage.StreamAck(
+            stream = 2,
+            accepted = false,
+            reason = StreamRefusal.UNSUPPORTED_CODEC,
+        )
+        val line = ControlCodec.toLine(refusal)
+        assertTrue(line.contains("\"unsupported_codec\""))
+        assertEquals(refusal, ControlCodec.fromLine(line))
+    }
+
+    @Test
+    fun streamStopAndRequestShouldRoundTrip() {
+        for (message in listOf(
+            ControlMessage.StreamStop(stream = 2),
+            ControlMessage.StreamRequest(stream = 2, active = true),
+            ControlMessage.StreamRequest(stream = 2, active = false),
+        )) {
+            assertEquals(message, ControlCodec.fromLine(ControlCodec.toLine(message)))
+        }
+    }
+
+    @Test
+    fun anUnknownCodecShouldParseRatherThanRejectTheLine() {
+        val line =
+            """{"type":"stream_start","stream":2,"params":{"codec":"flac","sample_rate":48000,"channels":1,"frame_ms":20}}"""
+        val parsed = ControlCodec.fromLine(line) as ControlMessage.StreamStart
+        assertEquals(AudioCodec.UNKNOWN, parsed.params.codec)
+    }
+
+    @Test
+    fun anUnknownRefusalReasonShouldParseRatherThanRejectTheLine() {
+        // A newer desktop may add reasons; the phone must still see the refusal.
+        val line = """{"type":"stream_ack","stream":2,"accepted":false,"reason":"quota_exceeded"}"""
+        val parsed = ControlCodec.fromLine(line) as ControlMessage.StreamAck
+        assertEquals(StreamRefusal.UNKNOWN, parsed.reason)
+    }
+
+    @Test
+    fun streamParamsShouldTolerateUnknownFields() {
+        val line =
+            """{"type":"stream_start","stream":2,"params":{"codec":"opus","sample_rate":48000,"channels":1,"frame_ms":20,"bitrate":32000}}"""
+        val parsed = ControlCodec.fromLine(line) as ControlMessage.StreamStart
+        assertEquals(AudioCodec.OPUS, parsed.params.codec)
+    }
+
     // --- Interop with real desktop output ---------------------------------------------------
 
     @Serializable
     private data class ControlLines(
         val hello_ack_high_session_id: String,
         val expected: Expected,
+        val stream_start_mic_pcm: String,
+        val stream_ack_accepted: String,
+        val stream_ack_refused: String,
+        val stream_stop: String,
+        val stream_request_start: String,
     ) {
         @Serializable
         data class Expected(
@@ -228,6 +303,30 @@ class ControlMessageTest {
         val parsed = ControlCodec.fromLine(ControlCodec.toLine(resuming))
         assertEquals(ControlMessage.Hello::class, parsed::class)
         assertEquals(resuming.resumeSessionId, (parsed as ControlMessage.Hello).resumeSessionId)
+    }
+
+    @Test
+    fun realDesktopStreamLifecycleLinesShouldParseAndReEncodeIdentically() {
+        val fixture = loadControlLines()
+        val expected = mapOf(
+            fixture.stream_start_mic_pcm to
+                ControlMessage.StreamStart(stream = 2, params = AudioParams()),
+            fixture.stream_ack_accepted to
+                ControlMessage.StreamAck(stream = 2, accepted = true),
+            fixture.stream_ack_refused to
+                ControlMessage.StreamAck(
+                    stream = 2,
+                    accepted = false,
+                    reason = StreamRefusal.UNSUPPORTED_CODEC,
+                ),
+            fixture.stream_stop to ControlMessage.StreamStop(stream = 2),
+            fixture.stream_request_start to
+                ControlMessage.StreamRequest(stream = 2, active = true),
+        )
+        for ((line, message) in expected) {
+            assertEquals(message, ControlCodec.fromLine(line))
+            assertEquals(line, ControlCodec.toLine(message).trim())
+        }
     }
 
     @Test

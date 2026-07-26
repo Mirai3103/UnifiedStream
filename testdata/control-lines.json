@@ -5,5 +5,10 @@
     "session_id_decimal": "13597845101738855385",
     "session_id_as_signed_long_bits": "-4848898971970696231",
     "media_port": 47811
-  }
+  },
+  "stream_start_mic_pcm": "{\"type\":\"stream_start\",\"stream\":2,\"params\":{\"codec\":\"pcm_s16le\",\"sample_rate\":48000,\"channels\":1,\"frame_ms\":20}}",
+  "stream_ack_accepted": "{\"type\":\"stream_ack\",\"stream\":2,\"accepted\":true}",
+  "stream_ack_refused": "{\"type\":\"stream_ack\",\"stream\":2,\"accepted\":false,\"reason\":\"unsupported_codec\"}",
+  "stream_stop": "{\"type\":\"stream_stop\",\"stream\":2}",
+  "stream_request_start": "{\"type\":\"stream_request\",\"stream\":2,\"active\":true}"
 }

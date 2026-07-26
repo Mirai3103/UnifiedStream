@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
@@ -51,10 +52,38 @@ class SessionManagerTest {
         /** Resume ids the phone asked for, in order. */
         val requestedResumeIds = java.util.Collections.synchronizedList(mutableListOf<Long?>())
 
+        /** Every `stream_start` the phone sent, in order. */
+        val streamStarts =
+            java.util.Collections.synchronizedList(mutableListOf<ControlMessage.StreamStart>())
+
+        /** How many `stream_stop`s the phone sent. */
+        val streamStops = java.util.concurrent.atomic.AtomicInteger(0)
+
+        /** Whether to accept the next microphone `stream_start`. */
+        @Volatile
+        var acceptMic: Boolean = true
+
+        /** Refusal reason used when [acceptMic] is false. */
+        @Volatile
+        var micRefusal: com.laffy.unifiedstream.protocol.StreamRefusal =
+            com.laffy.unifiedstream.protocol.StreamRefusal.INTERNAL
+
         val port: Int get() = server.localPort
 
         @Volatile
         var currentClient: Socket? = null
+
+        @Volatile
+        private var clientWriter: java.io.BufferedWriter? = null
+
+        /** Push a message to the connected phone, as the desktop would. */
+        fun send(message: ControlMessage) {
+            val writer = clientWriter ?: return
+            synchronized(writer) {
+                writer.write(ControlCodec.toLine(message))
+                writer.flush()
+            }
+        }
 
         init {
             thread(isDaemon = true, name = "fake-desktop") {
@@ -78,6 +107,7 @@ class SessionManagerTest {
             try {
                 val reader = socket.getInputStream().bufferedReader()
                 val writer = socket.getOutputStream().bufferedWriter()
+                clientWriter = writer
                 while (running.get()) {
                     val line = reader.readLine() ?: break
                     if (line.isBlank()) continue
@@ -94,15 +124,38 @@ class SessionManagerTest {
                                 sessionId = id,
                                 mediaPort = 47811,
                             )
-                            writer.write(ControlCodec.toLine(ack))
-                            writer.flush()
+                            synchronized(writer) {
+                                writer.write(ControlCodec.toLine(ack))
+                                writer.flush()
+                            }
                             handshakes.incrementAndGet()
                         }
 
                         is ControlMessage.Ping -> {
-                            writer.write(ControlCodec.toLine(ControlMessage.Pong(message.timestamp)))
-                            writer.flush()
+                            synchronized(writer) {
+                                writer.write(ControlCodec.toLine(ControlMessage.Pong(message.timestamp)))
+                                writer.flush()
+                            }
                         }
+
+                        is ControlMessage.StreamStart -> {
+                            streamStarts.add(message)
+                            val ack = if (acceptMic) {
+                                ControlMessage.StreamAck(stream = message.stream, accepted = true)
+                            } else {
+                                ControlMessage.StreamAck(
+                                    stream = message.stream,
+                                    accepted = false,
+                                    reason = micRefusal,
+                                )
+                            }
+                            synchronized(writer) {
+                                writer.write(ControlCodec.toLine(ack))
+                                writer.flush()
+                            }
+                        }
+
+                        is ControlMessage.StreamStop -> streamStops.incrementAndGet()
 
                         ControlMessage.Bye -> break
                         else -> Unit
@@ -365,6 +418,166 @@ class SessionManagerTest {
         assertTrue(
             "a live session must survive opening the device list",
             manager.state.value is ConnectionState.Connected,
+        )
+    }
+
+    // --- Microphone stream lifecycle ---------------------------------------------------------
+
+    /** Wait until the mic state satisfies [predicate], or fail after [timeoutMs]. */
+    private suspend fun SessionManager.awaitMicState(
+        timeoutMs: Long = 5_000,
+        description: String,
+        predicate: (MicStreamState) -> Boolean,
+    ): MicStreamState {
+        val result = withTimeoutOrNull(timeoutMs) {
+            var seen = micState.value
+            while (!predicate(seen)) {
+                delay(10)
+                seen = micState.value
+            }
+            seen
+        }
+        return requireNotNull(result) {
+            "timed out waiting for $description; last was ${micState.value}"
+        }
+    }
+
+    @Test
+    fun startingTheMicShouldReachActiveAfterAnAcceptingAck() = runBlocking {
+        val desktop = FakeDesktop().also { fake = it }
+        val manager = manager()
+
+        manager.connect(device(desktop.port))
+        manager.awaitState(description = "Connected") { it is ConnectionState.Connected }
+        manager.startMicStream()
+
+        manager.awaitMicState(description = "Active") { it is MicStreamState.Active }
+        assertEquals(1, desktop.streamStarts.size)
+        assertEquals(2, desktop.streamStarts[0].stream)
+    }
+
+    @Test
+    fun aRefusedMicShouldSurfaceTheReason() = runBlocking {
+        val desktop = FakeDesktop().also { fake = it }
+        desktop.acceptMic = false
+        desktop.micRefusal = com.laffy.unifiedstream.protocol.StreamRefusal.UNSUPPORTED_CODEC
+        val manager = manager()
+
+        manager.connect(device(desktop.port))
+        manager.awaitState(description = "Connected") { it is ConnectionState.Connected }
+        manager.startMicStream()
+
+        val state = manager.awaitMicState(description = "Refused") { it is MicStreamState.Refused }
+        assertEquals(
+            com.laffy.unifiedstream.protocol.StreamRefusal.UNSUPPORTED_CODEC,
+            (state as MicStreamState.Refused).reason,
+        )
+    }
+
+    @Test
+    fun aMicOutsideTheNegotiatedCapsShouldBeRefusedLocally() = runBlocking {
+        val desktop = FakeDesktop().also { fake = it }
+        val manager = SessionManager(
+            scope = scope,
+            deviceId = "phone-1",
+            deviceName = "Pixel 8",
+            caps = listOf("cam"), // no mic offered, so it cannot be negotiated
+        )
+
+        manager.connect(device(desktop.port))
+        manager.awaitState(description = "Connected") { it is ConnectionState.Connected }
+        manager.startMicStream()
+
+        val state = manager.awaitMicState(description = "Refused") { it is MicStreamState.Refused }
+        assertEquals(
+            com.laffy.unifiedstream.protocol.StreamRefusal.NOT_NEGOTIATED,
+            (state as MicStreamState.Refused).reason,
+        )
+        assertTrue("no stream_start may reach the desktop", desktop.streamStarts.isEmpty())
+    }
+
+    @Test
+    fun stoppingTheMicShouldTellTheDesktop() = runBlocking {
+        val desktop = FakeDesktop().also { fake = it }
+        val manager = manager()
+
+        manager.connect(device(desktop.port))
+        manager.awaitState(description = "Connected") { it is ConnectionState.Connected }
+        manager.startMicStream()
+        manager.awaitMicState(description = "Active") { it is MicStreamState.Active }
+
+        manager.stopMicStream()
+
+        manager.awaitMicState(description = "Inactive") { it is MicStreamState.Inactive }
+        withTimeoutOrNull(5_000) {
+            while (desktop.streamStops.get() == 0) delay(10)
+        } ?: throw AssertionError("desktop never received stream_stop")
+    }
+
+    @Test
+    fun aDesktopStreamStopShouldDeactivateTheMic() = runBlocking {
+        val desktop = FakeDesktop().also { fake = it }
+        val manager = manager()
+
+        manager.connect(device(desktop.port))
+        manager.awaitState(description = "Connected") { it is ConnectionState.Connected }
+        manager.startMicStream()
+        manager.awaitMicState(description = "Active") { it is MicStreamState.Active }
+
+        desktop.send(ControlMessage.StreamStop(stream = 2))
+
+        manager.awaitMicState(description = "Inactive") { it is MicStreamState.Inactive }
+        assertEquals(
+            "the phone must not echo a stream_stop back",
+            0,
+            desktop.streamStops.get(),
+        )
+    }
+
+    @Test
+    fun aDesktopMicRequestShouldBeSurfacedNotAutoStarted() = runBlocking {
+        val desktop = FakeDesktop().also { fake = it }
+        val manager = manager()
+        val requests = java.util.concurrent.atomic.AtomicInteger(0)
+        val collector = scope.launch {
+            manager.micStartRequests.collect { requests.incrementAndGet() }
+        }
+
+        manager.connect(device(desktop.port))
+        manager.awaitState(description = "Connected") { it is ConnectionState.Connected }
+
+        desktop.send(ControlMessage.StreamRequest(stream = 2, active = true))
+
+        withTimeoutOrNull(5_000) {
+            while (requests.get() == 0) delay(10)
+        } ?: throw AssertionError("the request never reached the observer")
+        assertTrue(
+            "capture must not start without a permission check",
+            manager.micState.value is MicStreamState.Inactive,
+        )
+        collector.cancel()
+    }
+
+    @Test
+    fun aReconnectShouldReAnnounceAnActiveMic() = runBlocking {
+        val desktop = FakeDesktop().also { fake = it }
+        val manager = manager(backoff = { attempt -> if (attempt <= 5) 50L else null })
+
+        manager.connect(device(desktop.port))
+        manager.awaitState(description = "Connected") { it is ConnectionState.Connected }
+        manager.startMicStream()
+        manager.awaitMicState(description = "Active") { it is MicStreamState.Active }
+
+        desktop.dropClient()
+
+        manager.awaitState(description = "reconnected") {
+            it is ConnectionState.Connected && desktop.handshakes.get() >= 2
+        }
+        manager.awaitMicState(description = "Active again") { it is MicStreamState.Active }
+        assertEquals(
+            "the mic must be re-announced with a fresh stream_start",
+            2,
+            desktop.streamStarts.size,
         )
     }
 }

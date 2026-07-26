@@ -12,7 +12,9 @@ use tokio::net::tcp::OwnedWriteHalf;
 use unifiedstream_net::control::{
     ControlEvent, ControlServer, ServerConfig, TrustStore,
 };
-use unifiedstream_net::protocol::{ControlMessage, ErrorReason, Hello, PROTOCOL_VERSION};
+use unifiedstream_net::protocol::{
+    AudioParams, ControlMessage, ErrorReason, Hello, StreamRefusal, PROTOCOL_VERSION,
+};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -383,5 +385,191 @@ async fn an_empty_line_should_be_ignored() {
     assert!(
         matches!(client.recv().await, Some(ControlMessage::HelloAck(_))),
         "blank lines must not disturb the stream"
+    );
+}
+
+/// Drain events until a `StreamStartRequested` arrives, answering it with `answer`.
+async fn answer_stream_start(
+    events: &mut tokio::sync::mpsc::Receiver<ControlEvent>,
+    answer: Result<(), StreamRefusal>,
+) {
+    loop {
+        let event = tokio::time::timeout(TIMEOUT, events.recv())
+            .await
+            .expect("stream start request must arrive")
+            .expect("event channel open");
+        if let ControlEvent::StreamStartRequested { respond, .. } = event {
+            respond.send(answer).expect("server must be waiting");
+            return;
+        }
+    }
+}
+
+/// Drain events until a `StreamStopped` arrives, returning its stream id.
+async fn next_stream_stopped(events: &mut tokio::sync::mpsc::Receiver<ControlEvent>) -> u8 {
+    loop {
+        let event = tokio::time::timeout(TIMEOUT, events.recv())
+            .await
+            .expect("stream stop must arrive")
+            .expect("event channel open");
+        if let ControlEvent::StreamStopped { stream } = event {
+            return stream;
+        }
+    }
+}
+
+fn mic_start() -> ControlMessage {
+    ControlMessage::StreamStart {
+        stream: 2,
+        params: AudioParams::MICROPHONE_PCM,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stream_start_should_be_acked_once_the_sink_is_ready() {
+    let (addr, mut events) = start(trusting("phone-1"), 47811).await;
+    let mut client = Client::connect(addr).await;
+    client.send(&ControlMessage::Hello(hello())).await;
+    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+
+    client.send(&mic_start()).await;
+    answer_stream_start(&mut events, Ok(())).await;
+
+    assert_eq!(
+        client.recv().await,
+        Some(ControlMessage::StreamAck {
+            stream: 2,
+            accepted: true,
+            reason: None,
+        })
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_sink_should_refuse_the_stream_as_internal() {
+    let (addr, mut events) = start(trusting("phone-1"), 47811).await;
+    let mut client = Client::connect(addr).await;
+    client.send(&ControlMessage::Hello(hello())).await;
+    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+
+    client.send(&mic_start()).await;
+    answer_stream_start(&mut events, Err(StreamRefusal::Internal)).await;
+
+    assert_eq!(
+        client.recv().await,
+        Some(ControlMessage::StreamAck {
+            stream: 2,
+            accepted: false,
+            reason: Some(StreamRefusal::Internal),
+        })
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stream_outside_the_negotiated_caps_should_be_refused() {
+    let (addr, _events) = start(trusting("phone-1"), 47811).await;
+    let mut client = Client::connect(addr).await;
+    // The phone offers only the camera, so the microphone is not negotiated.
+    client
+        .send(&ControlMessage::Hello(Hello {
+            caps: vec!["cam".to_owned()],
+            ..hello()
+        }))
+        .await;
+    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+
+    client.send(&mic_start()).await;
+
+    assert_eq!(
+        client.recv().await,
+        Some(ControlMessage::StreamAck {
+            stream: 2,
+            accepted: false,
+            reason: Some(StreamRefusal::NotNegotiated),
+        })
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stream_start_before_the_handshake_should_be_refused_not_hang() {
+    let (addr, _events) = start(trusting("phone-1"), 47811).await;
+    let mut client = Client::connect(addr).await;
+
+    client.send(&mic_start()).await;
+
+    assert_eq!(
+        client.recv().await,
+        Some(ControlMessage::StreamAck {
+            stream: 2,
+            accepted: false,
+            reason: Some(StreamRefusal::NotNegotiated),
+        })
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stream_stop_should_report_the_stream_as_stopped() {
+    let (addr, mut events) = start(trusting("phone-1"), 47811).await;
+    let mut client = Client::connect(addr).await;
+    client.send(&ControlMessage::Hello(hello())).await;
+    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+
+    client.send(&mic_start()).await;
+    answer_stream_start(&mut events, Ok(())).await;
+    assert!(matches!(
+        client.recv().await,
+        Some(ControlMessage::StreamAck { accepted: true, .. })
+    ));
+
+    client.send(&ControlMessage::StreamStop { stream: 2 }).await;
+
+    assert_eq!(next_stream_stopped(&mut events).await, 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dead_connection_should_stop_its_streams() {
+    let (addr, mut events) = start(trusting("phone-1"), 47811).await;
+    let mut client = Client::connect(addr).await;
+    client.send(&ControlMessage::Hello(hello())).await;
+    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+
+    client.send(&mic_start()).await;
+    answer_stream_start(&mut events, Ok(())).await;
+    assert!(matches!(
+        client.recv().await,
+        Some(ControlMessage::StreamAck { accepted: true, .. })
+    ));
+
+    drop(client);
+
+    assert_eq!(
+        next_stream_stopped(&mut events).await,
+        2,
+        "the sink must not outlive the connection feeding it"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_start_request_the_desktop_cannot_source_should_be_refused() {
+    let (addr, _events) = start(trusting("phone-1"), 47811).await;
+    let mut client = Client::connect(addr).await;
+    client.send(&ControlMessage::Hello(hello())).await;
+    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+
+    // The desktop sources nothing yet; even the speaker stream is a later change.
+    client
+        .send(&ControlMessage::StreamRequest {
+            stream: 3,
+            active: true,
+        })
+        .await;
+
+    assert_eq!(
+        client.recv().await,
+        Some(ControlMessage::StreamAck {
+            stream: 3,
+            accepted: false,
+            reason: Some(StreamRefusal::UnsupportedStream),
+        })
     );
 }

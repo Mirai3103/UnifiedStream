@@ -103,10 +103,136 @@ sealed interface ControlMessage {
         @SerialName("jitter_ms") val jitterMs: Double = 0.0,
     ) : ControlMessage
 
+    /** Source announces a stream it wants to send, protocol §3.9.1. */
+    @Serializable
+    @SerialName("stream_start")
+    data class StreamStart(
+        val stream: Int,
+        val params: AudioParams,
+    ) : ControlMessage
+
+    /** Sink accepts or refuses a [StreamStart], protocol §3.9.2. */
+    @Serializable
+    @SerialName("stream_ack")
+    data class StreamAck(
+        val stream: Int,
+        val accepted: Boolean,
+        /** Why not. Present exactly when [accepted] is false. */
+        val reason: StreamRefusal? = null,
+    ) : ControlMessage
+
+    /** Either side ends a stream, protocol §3.9.3. */
+    @Serializable
+    @SerialName("stream_stop")
+    data class StreamStop(val stream: Int) : ControlMessage
+
+    /** Sink asks the source to start or stop a stream, protocol §3.9.4. */
+    @Serializable
+    @SerialName("stream_request")
+    data class StreamRequest(
+        val stream: Int,
+        /** `true` to request a start, `false` a stop. */
+        val active: Boolean,
+    ) : ControlMessage
+
     /** Clean session teardown. */
     @Serializable
     @SerialName("bye")
     data object Bye : ControlMessage
+}
+
+/**
+ * Audio codec named in stream parameters.
+ *
+ * Unknown wire tokens parse as [UNKNOWN] rather than failing the line, so the sink can answer
+ * with an `unsupported_codec` refusal instead of treating the message as malformed.
+ */
+@Serializable(with = AudioCodecSerializer::class)
+enum class AudioCodec(val wire: String) {
+    /** Raw signed 16-bit little-endian samples. The mandatory baseline every peer decodes. */
+    PCM_S16LE("pcm_s16le"),
+
+    /** One Opus packet per frame. Offered only when the source has a working encoder. */
+    OPUS("opus"),
+
+    /** A codec this build does not know. */
+    UNKNOWN("unknown");
+
+    companion object {
+        fun fromWire(token: String): AudioCodec =
+            entries.firstOrNull { it.wire == token } ?: UNKNOWN
+    }
+}
+
+/** Maps [AudioCodec] to its wire token, tolerating tokens from a newer peer. */
+object AudioCodecSerializer : KSerializer<AudioCodec> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("AudioCodec", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: AudioCodec) {
+        encoder.encodeString(value.wire)
+    }
+
+    override fun deserialize(decoder: Decoder): AudioCodec =
+        AudioCodec.fromWire(decoder.decodeString())
+}
+
+/**
+ * Format parameters for an audio stream, protocol §3.9.1.
+ *
+ * Defaults are the microphone baseline: PCM S16LE, 48 kHz, mono, 20 ms frames.
+ */
+@Serializable
+data class AudioParams(
+    val codec: AudioCodec = AudioCodec.PCM_S16LE,
+    @SerialName("sample_rate") val sampleRate: Int = 48_000,
+    val channels: Int = 1,
+    @SerialName("frame_ms") val frameMs: Int = 20,
+)
+
+/**
+ * Why a `stream_start` or `stream_request` was refused.
+ *
+ * Unknown wire tokens parse as [UNKNOWN] so a newer desktop can add reasons without breaking
+ * this phone.
+ */
+@Serializable(with = StreamRefusalSerializer::class)
+enum class StreamRefusal(val wire: String) {
+    /** The stream's capability token is not in the negotiated set. */
+    NOT_NEGOTIATED("not_negotiated"),
+
+    /** The sink cannot decode the offered codec. */
+    UNSUPPORTED_CODEC("unsupported_codec"),
+
+    /** The sink does not recognise the stream identifier. */
+    UNSUPPORTED_STREAM("unsupported_stream"),
+
+    /** The sink cannot take another stream right now. */
+    BUSY("busy"),
+
+    /** The sink failed locally — e.g. its audio system is unavailable. */
+    INTERNAL("internal"),
+
+    /** A reason this build does not know. */
+    UNKNOWN("unknown");
+
+    companion object {
+        fun fromWire(token: String): StreamRefusal =
+            entries.firstOrNull { it.wire == token } ?: UNKNOWN
+    }
+}
+
+/** Maps [StreamRefusal] to its wire token, tolerating tokens from a newer peer. */
+object StreamRefusalSerializer : KSerializer<StreamRefusal> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("StreamRefusal", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: StreamRefusal) {
+        encoder.encodeString(value.wire)
+    }
+
+    override fun deserialize(decoder: Decoder): StreamRefusal =
+        StreamRefusal.fromWire(decoder.decodeString())
 }
 
 /** Why a control exchange failed. */

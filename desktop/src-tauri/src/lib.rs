@@ -68,6 +68,7 @@ pub fn run() {
             app::forget_devices,
             app::start_test_stream,
             app::stop_test_stream,
+            app::set_mic_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

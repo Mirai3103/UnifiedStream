@@ -66,7 +66,7 @@ older receivers rejecting the traffic outright.
 | ------ | ----------------- | ------------- | --------------------------------- |
 | 0      | Synthetic test    | Either        | Implemented                       |
 | 1      | Camera            | Phone → PC    | Reserved for a later change       |
-| 2      | Microphone        | Phone → PC    | Reserved for a later change       |
+| 2      | Microphone        | Phone → PC    | Implemented — see §5              |
 | 3      | Speaker           | PC → Phone    | Reserved for a later change       |
 | 4-255  | —                 | —             | Reserved                          |
 
@@ -279,6 +279,104 @@ cannot be stolen by guessing an identifier.
 Unknown tokens MUST be ignored, not treated as an error — this is the forward-compatibility hinge for
 later capabilities.
 
+### 3.9 Stream lifecycle
+
+Media streams are opened and closed over the control channel with four generic messages. The
+**source** of a stream is the peer that sends its media packets (the phone for camera and
+microphone, the desktop for speaker); the **sink** is the peer that receives them.
+
+A stream MUST NOT be started unless its capability token (§3.8) is in the negotiated intersection
+from the handshake. Media packets for a stream MUST NOT be sent before the source has received an
+accepting `stream_ack`. When a session ends for any reason, every active stream is implicitly
+stopped and its transport state (sequence tracking, reassembly buffers, playback buffers) released —
+no explicit `stream_stop` messages are required.
+
+#### 3.9.1 `stream_start` — source → sink
+
+Announces that the source wants to send a stream, and with what format.
+
+```json
+{
+  "type": "stream_start",
+  "stream": 2,
+  "params": { "codec": "pcm_s16le", "sample_rate": 48000, "channels": 1, "frame_ms": 20 }
+}
+```
+
+| Field    | Type    | Description                                    |
+| -------- | ------- | ---------------------------------------------- |
+| `stream` | u8      | Stream identifier from §2.2.                    |
+| `params` | object  | Format parameters. Audio fields below; video streams will define their own. |
+
+Audio `params` fields:
+
+| Field         | Type   | Description                                        |
+| ------------- | ------ | -------------------------------------------------- |
+| `codec`       | string | `"pcm_s16le"` or `"opus"`. PCM S16LE is the mandatory baseline every peer supports. |
+| `sample_rate` | u32    | Samples per second. `48000` for the microphone.     |
+| `channels`    | u8     | Channel count. `1` for the microphone.              |
+| `frame_ms`    | u32    | Frame duration in milliseconds. `20` for the microphone. |
+
+Unknown `params` fields MUST be ignored. A `stream_start` for a stream that is already active
+replaces its parameters: the sink re-acks and resets that stream's receive state.
+
+#### 3.9.2 `stream_ack` — sink → source
+
+Accepts or refuses a `stream_start`.
+
+```json
+{ "type": "stream_ack", "stream": 2, "accepted": true }
+{ "type": "stream_ack", "stream": 2, "accepted": false, "reason": "unsupported_codec" }
+```
+
+| Field      | Type    | Description                                       |
+| ---------- | ------- | ------------------------------------------------- |
+| `stream`   | u8      | Stream identifier being answered.                  |
+| `accepted` | bool    | Whether media may flow.                            |
+| `reason`   | string? | Present when `accepted` is false. Values below.    |
+
+| `reason`             | Meaning                                                        |
+| -------------------- | -------------------------------------------------------------- |
+| `not_negotiated`     | The stream's capability token is not in the negotiated set.     |
+| `unsupported_codec`  | The sink cannot decode the offered codec.                       |
+| `unsupported_stream` | The sink does not recognise the stream identifier.              |
+| `busy`               | The sink cannot take another stream right now.                  |
+| `internal`           | The sink failed locally (e.g. its audio system is unavailable). |
+
+A refusal closes nothing: the control connection and session continue.
+
+#### 3.9.3 `stream_stop` — either direction
+
+```json
+{ "type": "stream_stop", "stream": 2 }
+```
+
+Ends the stream. Both sides release the stream's transport state. Media packets that arrive for a
+stopped stream are discarded and counted (§2.3). A `stream_stop` for a stream that is not active is
+ignored.
+
+#### 3.9.4 `stream_request` — sink → source
+
+Asks the source to start or stop a stream, so the receiving side's UI can drive the toggle (the
+desktop's microphone switch, later the phone's speaker switch).
+
+```json
+{ "type": "stream_request", "stream": 2, "active": true }
+```
+
+| Field    | Type | Description                                  |
+| -------- | ---- | -------------------------------------------- |
+| `stream` | u8   | Stream identifier.                            |
+| `active` | bool | `true` to request a start, `false` a stop.    |
+
+The source responds by running the normal `stream_start` flow (honouring local preconditions such
+as permission checks — a request is not a command) or by sending `stream_stop`. A `stream_request`
+naming a stream the source cannot provide is answered with `stream_ack` `accepted: false` and the
+appropriate reason.
+
+Any lifecycle message naming a stream identifier the receiver does not recognise is answered with
+`stream_ack` `accepted: false`, reason `unsupported_stream`, and the connection stays open.
+
 ## 4. Discovery
 
 ### 4.1 Service record
@@ -315,3 +413,31 @@ On shutdown the advertiser sends an mDNS goodbye so browsers drop the entry with
 Where multicast is unavailable — AP client isolation, multicast filtering — the phone offers manual
 entry of an IP address and control port. A manually entered peer is treated identically to a
 discovered one from the handshake onward.
+
+## 5. Microphone stream (stream ID 2)
+
+Phone → PC audio, carried on stream ID 2 after a `stream_start`/`stream_ack` exchange (§3.9).
+
+Each transport frame carries exactly **one audio frame** of the negotiated duration (20 ms for the
+microphone). The media header timestamp (§2.1) is the capture time of the frame's **first sample**,
+in microseconds since session start, on the sender's clock. Packet loss therefore costs exactly one
+audio frame, and the incomplete-frame rules of §2.4 apply unchanged.
+
+The sender MAY simply stop transmitting frames without ending the stream — that is how mute is
+implemented. A receiver MUST tolerate an arbitrary gap in frames and resume playback when frames
+reappear; it fills the gap with silence.
+
+### 5.1 `pcm_s16le` payload
+
+Raw audio samples, **signed 16-bit little-endian**, interleaved if more than one channel. No
+additional payload header. At 48 kHz mono, a 20 ms frame is 960 samples = 1920 bytes, which
+fragments into two packets per §2.4.
+
+PCM samples are little-endian — unlike the header fields — because every current CPU on both ends
+is little-endian and the payload is copied, not parsed field-by-field.
+
+### 5.2 `opus` payload
+
+One self-delimited [Opus](https://datatracker.ietf.org/doc/html/rfc6716) packet per frame, encoding
+20 ms at 48 kHz. Opus is offered in `stream_start` only when the source actually has a working
+encoder; PCM S16LE remains the baseline every peer MUST accept.

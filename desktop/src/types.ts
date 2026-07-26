@@ -56,6 +56,24 @@ export interface TestStreamReport {
   bytes: number;
 }
 
+export interface AudioParams {
+  codec: "pcm_s16le" | "opus" | "unknown";
+  sample_rate: number;
+  channels: number;
+  frame_ms: number;
+}
+
+export interface MicStatus {
+  active: boolean;
+  error: string | null;
+  params: AudioParams | null;
+}
+
+export interface MicLevel {
+  rms: number;
+  peak: number;
+}
+
 export interface StatusSnapshot {
   device_name: string;
   device_id: string;
@@ -65,6 +83,7 @@ export interface StatusSnapshot {
   media_port: number;
   caps: string[];
   test_stream_running: boolean;
+  mic: MicStatus;
 }
 
 /** Event names emitted by the Rust side. Mirrors `app::events`. */
@@ -73,6 +92,8 @@ export const EVENTS = {
   pairingRequest: "pairing-request",
   telemetry: "telemetry",
   testStream: "test-stream",
+  micStatus: "mic-status",
+  micLevel: "mic-level",
 } as const;
 
 /** Human-readable text for a failure. */

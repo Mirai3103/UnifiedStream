@@ -27,6 +27,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,11 +43,15 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.laffy.unifiedstream.audio.GAIN_MAX
+import com.laffy.unifiedstream.audio.GAIN_MIN
+import com.laffy.unifiedstream.audio.MicLevel
 import com.laffy.unifiedstream.discovery.DiscoveredDevice
 import com.laffy.unifiedstream.discovery.DiscoveryState
 import com.laffy.unifiedstream.discovery.ManualAddress
 import com.laffy.unifiedstream.protocol.MAX_PAYLOAD
 import com.laffy.unifiedstream.session.ConnectionState
+import com.laffy.unifiedstream.session.MicStreamState
 import com.laffy.unifiedstream.telemetry.LinkQuality
 import com.laffy.unifiedstream.transport.TestStreamReport
 import com.laffy.unifiedstream.ui.theme.Degraded
@@ -59,8 +64,22 @@ import com.laffy.unifiedstream.ui.theme.TextMuted
 /** Features that exist in the UI but have no implementation behind them yet. */
 private val PLANNED_FEATURES = listOf(
     Triple("cam", "Camera", "Stream this camera to the PC"),
-    Triple("mic", "Microphone", "Use this mic as a PC input"),
     Triple("spk", "Speaker", "Play PC audio through this phone"),
+)
+
+/** Everything the microphone card renders and calls back into. */
+data class MicControls(
+    val state: MicStreamState = MicStreamState.Inactive,
+    val level: MicLevel = MicLevel(),
+    val muted: Boolean = false,
+    val gain: Float = 1f,
+    val noiseSuppression: Boolean = false,
+    val noiseSuppressionAvailable: Boolean = false,
+    val permissionNeeded: Boolean = false,
+    val onToggle: (Boolean) -> Unit = {},
+    val onMuteToggle: (Boolean) -> Unit = {},
+    val onGainChange: (Float) -> Unit = {},
+    val onNoiseSuppressionToggle: (Boolean) -> Unit = {},
 )
 
 @Composable
@@ -281,6 +300,7 @@ fun SessionScreen(
     dashboard: DashboardState,
     testReport: TestStreamReport?,
     testRunning: Boolean,
+    mic: MicControls,
     onStartTestStream: (Int, Int) -> Unit,
     onStopTestStream: () -> Unit,
     onDisconnect: () -> Unit,
@@ -322,12 +342,14 @@ fun SessionScreen(
             onStop = onStopTestStream,
         )
 
+        MicrophoneCard(connected = connection.isConnected, mic = mic)
+
         SectionCard(title = "Streams") {
             PLANNED_FEATURES.forEach { (id, label, hint) ->
                 FeatureToggleRow(key = id, label = label, hint = hint)
             }
             Text(
-                text = "Camera, microphone, and speaker arrive in later changes.",
+                text = "Camera and speaker arrive in later changes.",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextMuted,
             )
@@ -415,6 +437,129 @@ private fun TestStreamCard(
                 Metric("Verified", it.verified.toString(), Modifier.weight(1f))
                 Metric("Missing", it.missing.toString(), Modifier.weight(1f))
                 Metric("Corrupt", it.corrupt.toString(), Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MicrophoneCard(connected: Boolean, mic: MicControls) {
+    val streaming = mic.state is MicStreamState.Active
+    val switchOn = streaming || mic.state is MicStreamState.Starting
+
+    SectionCard(
+        title = "Microphone",
+        trailing = {
+            Switch(
+                checked = switchOn,
+                onCheckedChange = mic.onToggle,
+                enabled = connected,
+            )
+        },
+    ) {
+        when (val state = mic.state) {
+            is MicStreamState.Active -> {
+                MicLevelMeter(level = mic.level)
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (mic.muted) "Muted" else "Live",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (mic.muted) TextMuted else Good,
+                    )
+                    OutlinedButton(onClick = { mic.onMuteToggle(!mic.muted) }) {
+                        Text(if (mic.muted) "Unmute" else "Mute")
+                    }
+                }
+
+                Text(
+                    text = "Gain %.1fx".format(mic.gain),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted,
+                )
+                Slider(
+                    value = mic.gain,
+                    onValueChange = mic.onGainChange,
+                    valueRange = GAIN_MIN..GAIN_MAX,
+                )
+
+                if (mic.noiseSuppressionAvailable) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Noise suppression",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Switch(
+                            checked = mic.noiseSuppression,
+                            onCheckedChange = mic.onNoiseSuppressionToggle,
+                        )
+                    }
+                }
+            }
+
+            is MicStreamState.Starting -> Text(
+                text = "Waiting for the PC to accept…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextMuted,
+            )
+
+            else -> {
+                val explanation = when {
+                    mic.permissionNeeded ->
+                        "Microphone permission is required. Grant it to stream your voice."
+                    !connected -> "Connect to a PC to use the phone as its microphone."
+                    else -> state.display ?: "Use this phone as the PC's microphone."
+                }
+                Text(
+                    text = explanation,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (state is MicStreamState.Refused ||
+                        state is MicStreamState.Error || mic.permissionNeeded
+                    ) {
+                        Poor
+                    } else {
+                        TextMuted
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** A simple horizontal level meter: RMS as the filled bar, peak as a tick. */
+@Composable
+private fun MicLevelMeter(level: MicLevel) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(8.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(Surface2),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth(level.rms.coerceIn(0f, 1f))
+                .height(8.dp)
+                .background(Good),
+        )
+        if (level.peak > 0.01f) {
+            Row(Modifier.fillMaxWidth()) {
+                Spacer(Modifier.weight(level.peak.coerceIn(0.01f, 0.99f)))
+                Box(
+                    Modifier
+                        .width(2.dp)
+                        .height(8.dp)
+                        .background(Degraded),
+                )
+                Spacer(Modifier.weight((1f - level.peak).coerceIn(0.01f, 1f)))
             }
         }
     }

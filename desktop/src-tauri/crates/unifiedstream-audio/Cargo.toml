@@ -1,0 +1,22 @@
+[package]
+name = "unifiedstream-audio"
+description = "UnifiedStream audio output: jitter buffering and the PipeWire virtual source. No Tauri dependency."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Git rather than 0.8.0: the released libspa-sys bindings fail to build against the
+# PipeWire >= 1.2 headers this distro ships (spa_pod_builder became opaque to bindgen).
+# The v0_3_49 feature unlocks Buffer::requested, which sizes each pull to the graph quantum.
+pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs", rev = "5dd5dfad56bb0987e4d63af3d6f397e4a132dd9d", features = ["v0_3_49"] }
+
+[dev-dependencies]
+unifiedstream-net.workspace = true
+
+[lints]
+workspace = true

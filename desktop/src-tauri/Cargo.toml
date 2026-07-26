@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/unifiedstream-net"]
+members = ["crates/unifiedstream-net", "crates/unifiedstream-audio"]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,6 +8,7 @@ rust-version = "1.82"
 
 [workspace.dependencies]
 unifiedstream-net = { path = "crates/unifiedstream-net" }
+unifiedstream-audio = { path = "crates/unifiedstream-audio" }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "io-util"] }
 mdns-sd = "0.20"
 serde = { version = "1", features = ["derive"] }
@@ -50,6 +51,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 unifiedstream-net.workspace = true
+unifiedstream-audio.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 serde_json.workspace = true

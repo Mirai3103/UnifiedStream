@@ -183,6 +183,11 @@ fn control_lines_should_match_the_committed_fixture() {
     #[derive(Debug, Deserialize)]
     struct Lines {
         hello_ack_high_session_id: String,
+        stream_start_mic_pcm: String,
+        stream_ack_accepted: String,
+        stream_ack_refused: String,
+        stream_stop: String,
+        stream_request_start: String,
     }
     let text = std::fs::read_to_string(&path).expect("fixture must be readable");
     let expected: Lines = serde_json::from_str(&text).expect("fixture must be valid JSON");
@@ -203,4 +208,36 @@ fn control_lines_should_match_the_committed_fixture() {
     // And it must survive a round trip through our own parser.
     let parsed = ControlMessage::from_line(&line).expect("decode");
     assert_eq!(parsed, ack);
+
+    // Stream lifecycle lines, protocol §3.9. The Kotlin suite parses and re-emits these.
+    use unifiedstream_net::protocol::{AudioParams, StreamRefusal};
+
+    let cases = [
+        (
+            ControlMessage::StreamStart {
+                stream: 2,
+                params: AudioParams::MICROPHONE_PCM,
+            },
+            &expected.stream_start_mic_pcm,
+        ),
+        (ControlMessage::stream_accept(2), &expected.stream_ack_accepted),
+        (
+            ControlMessage::stream_refuse(2, StreamRefusal::UnsupportedCodec),
+            &expected.stream_ack_refused,
+        ),
+        (ControlMessage::StreamStop { stream: 2 }, &expected.stream_stop),
+        (
+            ControlMessage::StreamRequest {
+                stream: 2,
+                active: true,
+            },
+            &expected.stream_request_start,
+        ),
+    ];
+    for (message, fixture) in cases {
+        let line = message.to_line().expect("encode");
+        assert_eq!(line.trim_end(), fixture.as_str());
+        let parsed = ControlMessage::from_line(&line).expect("decode");
+        assert_eq!(parsed, message);
+    }
 }

@@ -1,8 +1,14 @@
 package com.laffy.unifiedstream.ui
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.laffy.unifiedstream.audio.MicCapture
+import com.laffy.unifiedstream.audio.MicController
+import com.laffy.unifiedstream.audio.MicLevel
 import com.laffy.unifiedstream.discovery.DeviceDiscovery
 import com.laffy.unifiedstream.discovery.DeviceIdentity
 import com.laffy.unifiedstream.discovery.DeviceIdentityStore
@@ -11,6 +17,7 @@ import com.laffy.unifiedstream.discovery.DiscoveryState
 import com.laffy.unifiedstream.discovery.ManualAddress
 import com.laffy.unifiedstream.protocol.Caps
 import com.laffy.unifiedstream.session.ConnectionState
+import com.laffy.unifiedstream.session.MicStreamState
 import com.laffy.unifiedstream.session.SessionManager
 import com.laffy.unifiedstream.telemetry.LinkQuality
 import com.laffy.unifiedstream.transport.TestStreamConfig
@@ -76,6 +83,34 @@ class UnifiedStreamViewModel(application: Application) : AndroidViewModel(applic
     /** Whether the synthetic test stream is sending. */
     val testRunning: StateFlow<Boolean> = _testRunning.asStateFlow()
 
+    private val micController = MicController(MicCapture.noiseSuppressionAvailable)
+    private var micCapture: MicCapture? = null
+
+    private val _micState = MutableStateFlow<MicStreamState>(MicStreamState.Inactive)
+
+    /** Microphone stream lifecycle, for the toggle and its error states. */
+    val micState: StateFlow<MicStreamState> = _micState.asStateFlow()
+
+    /** Live input level for the mic meter. Zero while muted or off. */
+    val micLevel: StateFlow<MicLevel> = micController.level
+
+    /** Whether frames are being withheld while the stream stays up. */
+    val micMuted: StateFlow<Boolean> = micController.muted
+
+    /** Software gain, 0.5x–4x. */
+    val micGain: StateFlow<Float> = micController.gain
+
+    /** The user's noise-suppression preference. */
+    val micNoiseSuppression: StateFlow<Boolean> = micController.noiseSuppression
+
+    /** Whether this device offers noise suppression at all; hides the toggle when false. */
+    val micNoiseSuppressionAvailable: Boolean = micController.noiseSuppressionAvailable
+
+    private val _micPermissionNeeded = MutableStateFlow(false)
+
+    /** True after a denied `RECORD_AUDIO` request, so the UI can explain the dead toggle. */
+    val micPermissionNeeded: StateFlow<Boolean> = _micPermissionNeeded.asStateFlow()
+
     /** Devices found on the network. */
     val devices: StateFlow<List<DiscoveredDevice>> = discovery.devices
 
@@ -106,6 +141,27 @@ class UnifiedStreamViewModel(application: Application) : AndroidViewModel(applic
             launch { manager.state.collect { _connection.value = it } }
             launch { manager.testReport.collect { _testReport.value = it } }
             launch { manager.testRunning.collect { _testRunning.value = it } }
+            launch {
+                manager.micState.collect { state ->
+                    _micState.value = state
+                    // Capture runs exactly while the stream is accepted; everything else —
+                    // mute, refusal, teardown — flows from this one binding.
+                    if (state is MicStreamState.Active) startCapture() else stopCapture()
+                }
+            }
+            launch {
+                manager.micStartRequests.collect {
+                    // The desktop asked for the mic. Honour it only if the permission is
+                    // already granted; otherwise refuse so its toggle does not hang, and
+                    // surface why locally.
+                    if (hasRecordPermission()) {
+                        manager.startMicStream()
+                    } else {
+                        manager.refuseMicRequest()
+                        _micPermissionNeeded.value = true
+                    }
+                }
+            }
             launch {
                 combine(manager.rttMs, manager.peerTelemetry) { rtt, peer ->
                     DashboardState(
@@ -164,6 +220,69 @@ class UnifiedStreamViewModel(application: Application) : AndroidViewModel(applic
         session?.cancelReconnect()
     }
 
+    // --- Microphone ------------------------------------------------------------------------
+
+    /**
+     * Turn the microphone on. Call only with `RECORD_AUDIO` granted — the Compose layer runs
+     * the permission request and calls [onMicPermissionDenied] otherwise.
+     */
+    fun enableMic() {
+        _micPermissionNeeded.value = false
+        session?.startMicStream()
+    }
+
+    /** Turn the microphone off. */
+    fun disableMic() {
+        session?.stopMicStream()
+    }
+
+    /** Record that the user denied `RECORD_AUDIO`, so the UI can explain the dead toggle. */
+    fun onMicPermissionDenied() {
+        _micPermissionNeeded.value = true
+    }
+
+    /** Mute or unmute without touching the stream. */
+    fun setMicMuted(muted: Boolean) {
+        micController.setMuted(muted)
+    }
+
+    /** Set the software gain, clamped to 0.5x–4x. */
+    fun setMicGain(gain: Float) {
+        micController.setGain(gain)
+    }
+
+    /** Toggle platform noise suppression on the live capture session. */
+    fun setMicNoiseSuppression(enabled: Boolean) {
+        micController.setNoiseSuppression(enabled)
+        micCapture?.applyNoiseSuppression(enabled && micController.noiseSuppressionAvailable)
+    }
+
+    /** Whether `RECORD_AUDIO` is currently granted. */
+    fun hasRecordPermission(): Boolean = ContextCompat.checkSelfPermission(
+        getApplication(),
+        Manifest.permission.RECORD_AUDIO,
+    ) == PackageManager.PERMISSION_GRANTED
+
+    private fun startCapture() {
+        if (micCapture?.isRunning == true) return
+        val capture = MicCapture(
+            onFrame = { samples ->
+                // Capture thread: gain and metering in place, then hand off to the sender
+                // queue. A null payload is a muted frame.
+                micController.process(samples)?.let { session?.sendMicFrame(it) }
+            },
+            onFailure = { message -> session?.reportMicFailure(message) },
+        )
+        micCapture = capture
+        capture.start(micController.noiseSuppression.value)
+    }
+
+    private fun stopCapture() {
+        micCapture?.stop()
+        micCapture = null
+        micController.resetLevel()
+    }
+
     /** Validate and add a hand-typed peer, returning true when it was accepted. */
     fun addManualDevice(host: String, port: String): Boolean =
         when (val result = ManualAddress.validate(host, port)) {
@@ -189,6 +308,7 @@ class UnifiedStreamViewModel(application: Application) : AndroidViewModel(applic
     override fun onCleared() {
         super.onCleared()
         discovery.stop()
+        stopCapture()
         session?.disconnect()
     }
 }

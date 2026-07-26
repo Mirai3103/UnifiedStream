@@ -5,6 +5,8 @@ import "./App.css";
 import {
   ConnectionState,
   EVENTS,
+  MicLevel,
+  MicStatus,
   PairingRequest,
   StatusSnapshot,
   TelemetryTick,
@@ -16,7 +18,6 @@ import {
 /** Features that exist in the UI but have no implementation behind them yet. */
 const PLANNED_FEATURES = [
   { id: "cam", label: "Camera", hint: "Phone camera as a webcam" },
-  { id: "mic", label: "Microphone", hint: "Phone mic as an input device" },
   { id: "spk", label: "Speaker", hint: "PC audio to phone speakers" },
 ] as const;
 
@@ -30,6 +31,14 @@ function App() {
   const [frameBytes, setFrameBytes] = useState(4096);
   const [rateHz, setRateHz] = useState(60);
   const [error, setError] = useState<string | null>(null);
+  const [mic, setMic] = useState<MicStatus>({
+    active: false,
+    error: null,
+    params: null,
+  });
+  const [micLevel, setMicLevel] = useState<MicLevel>({ rms: 0, peak: 0 });
+  // True between asking the phone for the mic and hearing its answer.
+  const [micPending, setMicPending] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -37,6 +46,7 @@ function App() {
       setStatus(snapshot);
       setState(snapshot.state);
       setTestRunning(snapshot.test_stream_running);
+      setMic(snapshot.mic);
     } catch (e) {
       setError(String(e));
     }
@@ -53,6 +63,9 @@ function App() {
           setTelemetry(null);
           setTestReport(null);
           setTestRunning(false);
+          setMic({ active: false, error: null, params: null });
+          setMicLevel({ rms: 0, peak: 0 });
+          setMicPending(false);
         }
       }),
       listen<PairingRequest>(EVENTS.pairingRequest, (event) =>
@@ -64,6 +77,12 @@ function App() {
       listen<TestStreamReport>(EVENTS.testStream, (event) =>
         setTestReport(event.payload),
       ),
+      listen<MicStatus>(EVENTS.micStatus, (event) => {
+        setMic(event.payload);
+        setMicPending(false);
+        if (!event.payload.active) setMicLevel({ rms: 0, peak: 0 });
+      }),
+      listen<MicLevel>(EVENTS.micLevel, (event) => setMicLevel(event.payload)),
     ];
 
     return () => {
@@ -99,6 +118,20 @@ function App() {
       args: { rate_hz: rateHz, frame_bytes: frameBytes },
     });
     setTestRunning(true);
+  };
+
+  const toggleMic = async () => {
+    setMicPending(true);
+    setMic((current) => ({ ...current, error: null }));
+    try {
+      await invoke("set_mic_enabled", { enabled: !mic.active });
+      // The answer arrives via the mic-status event; if the phone never replies,
+      // stop showing a spinner after its ack timeout would have fired.
+      window.setTimeout(() => setMicPending(false), 6000);
+    } catch (e) {
+      setMicPending(false);
+      setError(String(e));
+    }
   };
 
   const connected = state.state === "connected";
@@ -294,6 +327,58 @@ function App() {
 
       <section className="glass panel">
         <div className="panel-head">
+          <h2>Microphone</h2>
+          <span className={`dot dot-${mic.active ? "on" : "off"}`} />
+        </div>
+
+        <div className="features">
+          <div className="feature">
+            <div>
+              <div className="feature-label">Phone microphone</div>
+              <div className="muted small">
+                {mic.active
+                  ? `Live — "UnifiedStream Microphone" is available as an input device (${
+                      mic.params ? `${mic.params.codec}, ${mic.params.sample_rate / 1000} kHz` : "…"
+                    })`
+                  : micPending
+                    ? "Waiting for the phone…"
+                    : "Ask the phone to stream its mic to this PC"}
+              </div>
+            </div>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={mic.active}
+                disabled={!connected || micPending}
+                onChange={() => void toggleMic()}
+              />
+              <span className="slider" />
+            </label>
+          </div>
+        </div>
+
+        {mic.active && (
+          <div className="level-meter" aria-label="microphone level">
+            <div
+              className="level-fill"
+              style={{ width: `${Math.round(micLevel.rms * 100)}%` }}
+            />
+            <div
+              className="level-peak"
+              style={{ left: `${Math.round(micLevel.peak * 100)}%` }}
+            />
+          </div>
+        )}
+
+        {mic.error && (
+          <p className="muted small error-text" role="alert">
+            {mic.error}
+          </p>
+        )}
+      </section>
+
+      <section className="glass panel">
+        <div className="panel-head">
           <h2>Streams</h2>
         </div>
         <div className="features">
@@ -311,8 +396,7 @@ function App() {
           ))}
         </div>
         <p className="muted small">
-          Camera, microphone, and speaker arrive in later changes. The network
-          foundation they run on is what this build ships.
+          Camera and speaker arrive in later changes.
         </p>
       </section>
     </main>

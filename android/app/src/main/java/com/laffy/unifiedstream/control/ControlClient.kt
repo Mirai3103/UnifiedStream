@@ -6,6 +6,7 @@ import com.laffy.unifiedstream.protocol.ControlMessage
 import com.laffy.unifiedstream.protocol.ErrorReason
 import com.laffy.unifiedstream.protocol.MalformedControlException
 import com.laffy.unifiedstream.protocol.PROTOCOL_VERSION
+import com.laffy.unifiedstream.protocol.StreamRefusal
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.IOException
@@ -57,6 +58,19 @@ sealed interface ControlClientEvent {
 
     /** The desktop reported its link quality. */
     data class TelemetryReceived(val report: ControlMessage.Telemetry) : ControlClientEvent
+
+    /** The desktop answered one of our `stream_start`s, protocol §3.9.2. */
+    data class StreamAckReceived(
+        val stream: Int,
+        val accepted: Boolean,
+        val reason: StreamRefusal?,
+    ) : ControlClientEvent
+
+    /** The desktop asked us to start or stop a stream we source, protocol §3.9.4. */
+    data class StreamRequested(val stream: Int, val active: Boolean) : ControlClientEvent
+
+    /** The desktop ended a stream, protocol §3.9.3. */
+    data class StreamStopReceived(val stream: Int) : ControlClientEvent
 
     /** The desktop said bye. */
     data object PeerLeft : ControlClientEvent
@@ -306,6 +320,29 @@ class ControlClient(
                 _events.emit(ControlClientEvent.PeerLeft)
                 closeInternal()
             }
+
+            is ControlMessage.StreamAck -> _events.emit(
+                ControlClientEvent.StreamAckReceived(message.stream, message.accepted, message.reason),
+            )
+
+            is ControlMessage.StreamRequest -> _events.emit(
+                ControlClientEvent.StreamRequested(message.stream, message.active),
+            )
+
+            is ControlMessage.StreamStop -> _events.emit(
+                ControlClientEvent.StreamStopReceived(message.stream),
+            )
+
+            is ControlMessage.StreamStart ->
+                // The phone sinks nothing yet; the speaker stream is a later change. Refuse
+                // rather than leave the desktop waiting out its ack timeout.
+                outbound.trySend(
+                    ControlMessage.StreamAck(
+                        stream = message.stream,
+                        accepted = false,
+                        reason = StreamRefusal.UNSUPPORTED_STREAM,
+                    ),
+                )
 
             is ControlMessage.Hello, is ControlMessage.HelloAck ->
                 Log.d(TAG, "ignoring ${message::class.simpleName} outside the handshake")

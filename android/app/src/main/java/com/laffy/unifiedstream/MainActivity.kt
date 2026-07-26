@@ -25,6 +25,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.laffy.unifiedstream.session.ConnectionState
 import com.laffy.unifiedstream.session.SessionService
 import com.laffy.unifiedstream.ui.DeviceListScreen
+import com.laffy.unifiedstream.ui.MicControls
 import com.laffy.unifiedstream.ui.SessionScreen
 import com.laffy.unifiedstream.ui.UnifiedStreamViewModel
 import com.laffy.unifiedstream.ui.theme.UnifiedStreamTheme
@@ -61,12 +62,24 @@ fun UnifiedStreamApp(
     val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
     val testReport by viewModel.testReport.collectAsStateWithLifecycle()
     val testRunning by viewModel.testRunning.collectAsStateWithLifecycle()
+    val micState by viewModel.micState.collectAsStateWithLifecycle()
+    val micLevel by viewModel.micLevel.collectAsStateWithLifecycle()
+    val micMuted by viewModel.micMuted.collectAsStateWithLifecycle()
+    val micGain by viewModel.micGain.collectAsStateWithLifecycle()
+    val micNoiseSuppression by viewModel.micNoiseSuppression.collectAsStateWithLifecycle()
+    val micPermissionNeeded by viewModel.micPermissionNeeded.collectAsStateWithLifecycle()
 
     var screen by remember { mutableStateOf(Screen.Devices) }
 
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { /* The session runs either way; without it there is simply no notification. */ }
+
+    val micPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) viewModel.enableMic() else viewModel.onMicPermissionDenied()
+    }
 
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -119,6 +132,27 @@ fun UnifiedStreamApp(
             dashboard = dashboard,
             testReport = testReport,
             testRunning = testRunning,
+            mic = MicControls(
+                state = micState,
+                level = micLevel,
+                muted = micMuted,
+                gain = micGain,
+                noiseSuppression = micNoiseSuppression,
+                noiseSuppressionAvailable = viewModel.micNoiseSuppressionAvailable,
+                permissionNeeded = micPermissionNeeded,
+                onToggle = { enable ->
+                    if (!enable) {
+                        viewModel.disableMic()
+                    } else if (viewModel.hasRecordPermission()) {
+                        viewModel.enableMic()
+                    } else {
+                        micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                onMuteToggle = viewModel::setMicMuted,
+                onGainChange = viewModel::setMicGain,
+                onNoiseSuppressionToggle = viewModel::setMicNoiseSuppression,
+            ),
             onStartTestStream = viewModel::startTestStream,
             onStopTestStream = viewModel::stopTestStream,
             onDisconnect = viewModel::disconnect,
