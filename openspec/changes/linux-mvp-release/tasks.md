@@ -46,7 +46,7 @@
 - [x] 6.3 Build the full artifact set locally or in a workflow dry run and verify filenames, embedded versions, APK signing status, and `SHA256SUMS`.
 - [x] 6.4 Install and launch the AppImage on CachyOS, verify the `.deb` build metadata without Ubuntu runtime testing, and sideload the APK on a physical Android device.
 - [x] 6.5 Follow the published quick start as a user, verify camera, microphone, and speaker output, and exercise at least one recovery path for discovery, video, and audio.
-- [ ] 6.6 Record smoke-test environments, commands, results, known limitations, and any unavailable local checks in the pull request.
+- [x] 6.6 Record smoke-test environments, commands, results, known limitations, and any unavailable local checks in the pull request.
 
 ## 7. Complete the OpenSpec Change
 
