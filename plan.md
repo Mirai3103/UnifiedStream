@@ -15,7 +15,7 @@ Roadmap này ưu tiên hoàn thiện Linux trước. Mỗi tính năng lớn ph�
 
 ## 2. Cải thiện FPS camera
 
-- [ ] Tạo OpenSpec change mới khi bắt đầu giai đoạn này; không dùng lại change rỗng cũ.
+- [ ] Tạo OpenSpec change mới khi bắt đầu giai đoạn này; 
 - [ ] Đo capture FPS, thời gian chuyển YUV/NV21, JPEG encode, kích thước frame, queue drop, packet loss và FPS nhận được.
 - [ ] Đo thực tế ở 480p, 720p và 1080p.
 - [ ] Tối ưu theo bottleneck đã đo: ưu tiên buffer reuse, JPEG quality, sau đó mới cân nhắc encode thread.
