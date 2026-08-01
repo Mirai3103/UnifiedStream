@@ -39,7 +39,10 @@ impl MediaSender {
     /// Microseconds since this sender started, wrapping at 2^32 as the wire format requires.
     #[must_use]
     pub fn timestamp_now(&self) -> u32 {
-        #[allow(clippy::cast_possible_truncation, reason = "wrapping at 2^32 is the wire format")]
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "wrapping at 2^32 is the wire format"
+        )]
         let micros = self.started.elapsed().as_micros() as u32;
         micros
     }
@@ -107,7 +110,8 @@ mod tests {
     use super::*;
 
     fn parse(datagram: &[u8]) -> (MediaHeader, Vec<u8>) {
-        let (header, payload) = MediaHeader::split(datagram).expect("sender must emit valid packets");
+        let (header, payload) =
+            MediaHeader::split(datagram).expect("sender must emit valid packets");
         (header, payload.to_vec())
     }
 
@@ -193,7 +197,9 @@ mod tests {
     #[test]
     fn reassembling_the_fragments_should_reproduce_the_payload() {
         let mut tx = MediaSender::new(7);
-        let payload: Vec<u8> = (0..(MAX_PAYLOAD * 3 + 42)).map(|i| (i % 251) as u8).collect();
+        let payload: Vec<u8> = (0..(MAX_PAYLOAD * 3 + 42))
+            .map(|i| (i % 251) as u8)
+            .collect();
 
         let rebuilt: Vec<u8> = tx
             .frame_at(StreamId::TEST, &payload, 1_000)

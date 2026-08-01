@@ -94,7 +94,11 @@ mod tests {
         chunker.push(&[1, 2, 3], |_| {});
         chunker.clear();
         let frames = collect(&mut chunker, &[7, 8, 9, 10]);
-        assert_eq!(frames, vec![vec![7, 8, 9, 10]], "old samples must not leak in");
+        assert_eq!(
+            frames,
+            vec![vec![7, 8, 9, 10]],
+            "old samples must not leak in"
+        );
     }
 
     #[test]

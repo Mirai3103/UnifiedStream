@@ -1,0 +1,53 @@
+## ADDED Requirements
+
+### Requirement: Pull request quality validation
+The repository SHALL run automated OpenSpec, Rust, Android, and frontend quality checks for every pull request targeting `main` and SHALL report each area as a distinct check.
+
+#### Scenario: Pull request starts validation
+- **WHEN** a pull request targeting `main` is opened or updated
+- **THEN** the repository runs all four quality checks against that pull request revision
+
+#### Scenario: A quality area fails
+- **WHEN** any command in a quality area fails
+- **THEN** its distinct check reports failure and identifies the failing command in its logs
+
+### Requirement: Reproducible quality commands
+CI SHALL use checked-in wrappers and lockfiles where available, pinned toolchain versions where needed, and the repository's standard validation commands.
+
+#### Scenario: Rust validation runs
+- **WHEN** the Rust quality check executes
+- **THEN** it checks formatting, denies Clippy warnings for workspace production targets, and runs all workspace tests
+
+#### Scenario: Android validation runs
+- **WHEN** the Android quality check executes
+- **THEN** it uses the checked-in Gradle wrapper to run debug unit tests and assemble the debug APK
+
+#### Scenario: Frontend validation runs
+- **WHEN** the frontend quality check executes
+- **THEN** it installs dependencies from the committed Bun lockfile without updating it and completes the production build
+
+#### Scenario: OpenSpec validation runs
+- **WHEN** the OpenSpec quality check executes
+- **THEN** it runs `openspec validate --all` with a pinned OpenSpec CLI version and fails if any item is invalid
+
+### Requirement: Protected main branch
+The GitHub repository MUST reject direct pushes, force pushes, and deletion of `main`, and MUST allow changes into `main` only by merging a pull request whose required quality checks pass.
+
+#### Scenario: Direct push is attempted
+- **WHEN** a contributor attempts to push a commit directly to `main`
+- **THEN** GitHub rejects the push
+
+#### Scenario: Pull request has a failing required check
+- **WHEN** any required quality check on a pull request is failing or incomplete
+- **THEN** GitHub prevents that pull request from merging into `main`
+
+#### Scenario: Pull request satisfies protection rules
+- **WHEN** all required quality checks pass and the pull request satisfies the configured repository rules
+- **THEN** GitHub allows the pull request to be merged into `main`
+
+### Requirement: Documented contribution workflow
+The repository SHALL document the required branch-and-pull-request workflow and the local commands contributors can run before opening a pull request.
+
+#### Scenario: Contributor prepares a change
+- **WHEN** a contributor consults the repository documentation
+- **THEN** they can identify how to create a branch, validate the change locally, open a pull request, and wait for required checks before merge

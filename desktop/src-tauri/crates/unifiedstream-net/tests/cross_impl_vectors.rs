@@ -39,7 +39,10 @@ fn load() -> VectorFile {
             return serde_json::from_str(&text).expect("fixture must be valid JSON");
         }
         if !dir.pop() {
-            panic!("testdata/media-header-vectors.json not found above {}", env!("CARGO_MANIFEST_DIR"));
+            panic!(
+                "testdata/media-header-vectors.json not found above {}",
+                env!("CARGO_MANIFEST_DIR")
+            );
         }
     }
 }
@@ -80,7 +83,11 @@ fn every_fixture_vector_should_decode_to_its_declared_fields() {
 
         assert_eq!(decoded.stream, StreamId(v.stream), "{}: stream", v.name);
         assert_eq!(decoded.sequence, v.sequence, "{}: sequence", v.name);
-        assert_eq!(decoded.timestamp_us, v.timestamp_us, "{}: timestamp", v.name);
+        assert_eq!(
+            decoded.timestamp_us, v.timestamp_us,
+            "{}: timestamp",
+            v.name
+        );
         assert_eq!(decoded.session_id, session_id, "{}: session id", v.name);
         assert_eq!(decoded.fragment, v.fragment, "{}: fragment", v.name);
         assert_eq!(decoded.marker, v.marker, "{}: marker", v.name);
@@ -93,7 +100,12 @@ fn every_fixture_vector_should_re_encode_to_the_same_bytes() {
         let bytes = hex_to_bytes(&v.hex);
         let decoded = MediaHeader::decode(&bytes)
             .unwrap_or_else(|e| panic!("{}: must decode, got {e}", v.name));
-        assert_eq!(bytes_to_hex(&decoded.encode()), v.hex, "{}: re-encoded bytes", v.name);
+        assert_eq!(
+            bytes_to_hex(&decoded.encode()),
+            v.hex,
+            "{}: re-encoded bytes",
+            v.name
+        );
     }
 }
 
@@ -252,12 +264,18 @@ fn control_lines_should_match_the_committed_fixture() {
             },
             &expected.stream_request_camera_start,
         ),
-        (ControlMessage::stream_accept(2), &expected.stream_ack_accepted),
+        (
+            ControlMessage::stream_accept(2),
+            &expected.stream_ack_accepted,
+        ),
         (
             ControlMessage::stream_refuse(2, StreamRefusal::UnsupportedCodec),
             &expected.stream_ack_refused,
         ),
-        (ControlMessage::StreamStop { stream: 2 }, &expected.stream_stop),
+        (
+            ControlMessage::StreamStop { stream: 2 },
+            &expected.stream_stop,
+        ),
         (
             ControlMessage::StreamRequest {
                 stream: 2,

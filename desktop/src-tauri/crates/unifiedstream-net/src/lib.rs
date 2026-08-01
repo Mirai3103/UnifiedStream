@@ -16,7 +16,7 @@ pub mod telemetry;
 pub mod transport;
 
 pub use error::{NetError, Result};
-pub use protocol::{MediaHeader, PROTOCOL_VERSION, StreamId};
+pub use protocol::{MediaHeader, StreamId, PROTOCOL_VERSION};
 pub use session::ConnectionState;
 
 /// Default TCP port for the control channel.

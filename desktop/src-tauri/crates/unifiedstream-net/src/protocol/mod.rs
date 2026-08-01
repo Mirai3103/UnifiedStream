@@ -10,11 +10,11 @@ mod messages;
 pub use header::{
     seq_distance, seq_is_newer, MediaHeader, StreamId, HEADER_LEN, MAX_PAYLOAD, PROTOCOL_VERSION,
 };
+pub(crate) use messages::u64_string;
 pub use messages::{
     caps, intersect_caps, AudioCodec, AudioParams, ControlMessage, ErrorMessage, ErrorReason,
     Hello, HelloAck, StreamParams, StreamRefusal, TelemetryReport, VideoCodec, VideoParams,
 };
-pub(crate) use messages::u64_string;
 
 /// mDNS service type the desktop advertises and the phone browses.
 pub const SERVICE_TYPE: &str = "_unifiedstream._udp.local.";

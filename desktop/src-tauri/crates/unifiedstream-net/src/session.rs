@@ -38,11 +38,12 @@ impl std::fmt::Display for FailureReason {
 }
 
 /// Lifecycle of a connection to a peer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum ConnectionState {
     /// Nothing in progress.
+    #[default]
     Idle,
     /// Browsing or advertising, no peer selected.
     Discovering,
@@ -109,12 +110,6 @@ impl ConnectionState {
             | Self::Reconnecting { peer_name, .. } => Some(peer_name),
             Self::Idle | Self::Discovering | Self::Failed { .. } => None,
         }
-    }
-}
-
-impl Default for ConnectionState {
-    fn default() -> Self {
-        Self::Idle
     }
 }
 

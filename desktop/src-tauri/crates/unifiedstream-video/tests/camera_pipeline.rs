@@ -57,7 +57,10 @@ fn a_video_frame_should_survive_the_transport_byte_identical_and_decode() {
     let mut rx = demux();
     let mut delivered = Vec::new();
     for datagram in &datagrams {
-        delivered.extend(rx.accept(datagram).expect("valid datagrams must be accepted"));
+        delivered.extend(
+            rx.accept(datagram)
+                .expect("valid datagrams must be accepted"),
+        );
     }
 
     assert_eq!(delivered.len(), 1, "exactly one frame must come out");
@@ -90,14 +93,20 @@ fn losing_one_fragment_should_cost_exactly_that_frame() {
         delivered.extend(rx.accept(datagram).expect("accept"));
     }
 
-    assert_eq!(delivered.len(), 1, "only the complete frame may be delivered");
+    assert_eq!(
+        delivered.len(),
+        1,
+        "only the complete frame may be delivered"
+    );
     assert_eq!(delivered[0].payload, frame_b);
     let stats = rx.stats(StreamId::CAMERA).expect("stream is registered");
     assert_eq!(stats.incomplete_frames, 1);
     assert_eq!(stats.lost, 1);
 
     // The surviving frame still decodes: loss never corrupts later frames.
-    assert!(decode_jpeg_to_i420(&delivered[0].payload, u32::from(WIDTH), u32::from(HEIGHT)).is_ok());
+    assert!(
+        decode_jpeg_to_i420(&delivered[0].payload, u32::from(WIDTH), u32::from(HEIGHT)).is_ok()
+    );
 }
 
 #[test]

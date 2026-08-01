@@ -73,7 +73,11 @@ fn stereo_frames_should_arrive_byte_identical_through_the_full_path() {
             index as u32 * FRAME_INTERVAL_US,
         );
         // 3840 bytes must fragment into exactly four packets.
-        assert_eq!(datagrams.len(), 4, "a 20 ms stereo PCM frame is four fragments");
+        assert_eq!(
+            datagrams.len(),
+            4,
+            "a 20 ms stereo PCM frame is four fragments"
+        );
 
         let mut delivered = Vec::new();
         for datagram in &datagrams {
@@ -121,7 +125,11 @@ fn the_capture_chunker_should_frame_arbitrary_quantum_sizes_for_the_wire() {
         received, source,
         "every captured sample must reach the far side, in order"
     );
-    assert_eq!(chunker.pending_len(), 0, "the source length is a whole number of frames");
+    assert_eq!(
+        chunker.pending_len(),
+        0,
+        "the source length is a whole number of frames"
+    );
 }
 
 #[test]
@@ -149,13 +157,18 @@ fn a_lost_fragment_should_cost_exactly_one_frame() {
         }
     }
 
-    let stats = demux.stats(StreamId::SPEAKER).expect("stream is registered");
+    let stats = demux
+        .stats(StreamId::SPEAKER)
+        .expect("stream is registered");
     assert_eq!(
         stats.delivered_frames,
         (total - 1) as u64,
         "every frame but the damaged one must be delivered"
     );
-    assert_eq!(stats.incomplete_frames, 1, "the damaged frame is discarded whole");
+    assert_eq!(
+        stats.incomplete_frames, 1,
+        "the damaged frame is discarded whole"
+    );
     assert_eq!(stats.lost, 1, "exactly one packet went missing");
 
     // Nothing that survived is corrupted, and the damaged frame is absent.

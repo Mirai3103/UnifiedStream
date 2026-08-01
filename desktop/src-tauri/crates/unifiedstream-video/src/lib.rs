@@ -104,7 +104,10 @@ mod tests {
 
     #[test]
     fn i420_frame_bytes_should_be_one_and_a_half_bytes_per_pixel() {
-        assert_eq!(VideoFormat::CAMERA_720P.i420_frame_bytes(), 1280 * 720 * 3 / 2);
+        assert_eq!(
+            VideoFormat::CAMERA_720P.i420_frame_bytes(),
+            1280 * 720 * 3 / 2
+        );
         let vga = VideoFormat {
             width: 640,
             height: 480,

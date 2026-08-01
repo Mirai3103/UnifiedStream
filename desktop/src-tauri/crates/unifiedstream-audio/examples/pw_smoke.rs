@@ -13,7 +13,9 @@ fn main() {
     let mut source = PipeWireSource::new(Arc::clone(&buffer));
 
     match source.start(AudioFormat::MICROPHONE) {
-        Ok(()) => println!("virtual source up; check `pw-cli ls Node` for UnifiedStream Microphone"),
+        Ok(()) => {
+            println!("virtual source up; check `pw-cli ls Node` for UnifiedStream Microphone")
+        }
         Err(e) => {
             eprintln!("could not start virtual source: {e}");
             std::process::exit(1);

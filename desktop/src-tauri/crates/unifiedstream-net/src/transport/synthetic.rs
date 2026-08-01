@@ -40,7 +40,10 @@ impl TestStreamConfig {
     /// Nominal bitrate in megabits per second.
     #[must_use]
     pub fn nominal_mbps(&self) -> f64 {
-        #[allow(clippy::cast_precision_loss, reason = "configuration magnitudes are small")]
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "configuration magnitudes are small"
+        )]
         let bits = (self.frame_bytes as f64) * 8.0 * f64::from(self.rate_hz);
         bits / 1_000_000.0
     }
@@ -86,7 +89,10 @@ pub fn build_frame(index: u32, frame_bytes: usize) -> Vec<u8> {
     let size = frame_bytes.max(PREAMBLE);
     let mut frame = Vec::with_capacity(size);
     frame.extend_from_slice(&index.to_be_bytes());
-    #[allow(clippy::cast_possible_truncation, reason = "frame sizes are far below 4 GiB")]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "frame sizes are far below 4 GiB"
+    )]
     let len = size as u32;
     frame.extend_from_slice(&len.to_be_bytes());
     frame.extend((PREAMBLE..size).map(|offset| pattern_byte(index, offset)));
@@ -99,7 +105,9 @@ pub fn build_frame(index: u32, frame_bytes: usize) -> Vec<u8> {
 /// assembled from the wrong fragments fails verification instead of looking plausible.
 #[must_use]
 const fn pattern_byte(index: u32, offset: usize) -> u8 {
-    let mixed = (index as usize).wrapping_mul(31).wrapping_add(offset.wrapping_mul(7));
+    let mixed = (index as usize)
+        .wrapping_mul(31)
+        .wrapping_add(offset.wrapping_mul(7));
     (mixed % 251) as u8
 }
 
@@ -411,7 +419,13 @@ mod tests {
         }
 
         let report = verifier.report();
-        assert_eq!(report.corrupt, 0, "a lost fragment must not look like corruption");
-        assert!(report.missing >= 1, "the lost frame must be reported missing");
+        assert_eq!(
+            report.corrupt, 0,
+            "a lost fragment must not look like corruption"
+        );
+        assert!(
+            report.missing >= 1,
+            "the lost frame must be reported missing"
+        );
     }
 }

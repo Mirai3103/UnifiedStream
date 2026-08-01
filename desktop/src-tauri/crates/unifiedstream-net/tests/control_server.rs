@@ -6,12 +6,10 @@
 use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{TcpListener, TcpStream};
 use tokio::net::tcp::OwnedWriteHalf;
+use tokio::net::{TcpListener, TcpStream};
 
-use unifiedstream_net::control::{
-    ControlEvent, ControlServer, ServerConfig, TrustStore,
-};
+use unifiedstream_net::control::{ControlEvent, ControlServer, ServerConfig, TrustStore};
 use unifiedstream_net::protocol::{
     AudioParams, ControlMessage, ErrorReason, Hello, StreamRefusal, PROTOCOL_VERSION,
 };
@@ -75,7 +73,13 @@ impl Client {
     }
 }
 
-async fn start(trust: TrustStore, media_port: u16) -> (std::net::SocketAddr, tokio::sync::mpsc::Receiver<ControlEvent>) {
+async fn start(
+    trust: TrustStore,
+    media_port: u16,
+) -> (
+    std::net::SocketAddr,
+    tokio::sync::mpsc::Receiver<ControlEvent>,
+) {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("bind");
     let addr = listener.local_addr().expect("local addr");
     let (_handle, events) =
@@ -238,9 +242,7 @@ async fn a_second_phone_should_be_refused_as_busy() {
     assert_eq!(error.reason, ErrorReason::Busy);
 
     // The established session must be undisturbed.
-    first
-        .send(&ControlMessage::Ping { timestamp: 42 })
-        .await;
+    first.send(&ControlMessage::Ping { timestamp: 42 }).await;
     assert_eq!(
         first.recv().await,
         Some(ControlMessage::Pong { timestamp: 42 }),
@@ -430,7 +432,10 @@ async fn a_stream_start_should_be_acked_once_the_sink_is_ready() {
     let (addr, mut events) = start(trusting("phone-1"), 47811).await;
     let mut client = Client::connect(addr).await;
     client.send(&ControlMessage::Hello(hello())).await;
-    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+    assert!(matches!(
+        client.recv().await,
+        Some(ControlMessage::HelloAck(_))
+    ));
 
     client.send(&mic_start()).await;
     answer_stream_start(&mut events, Ok(())).await;
@@ -450,7 +455,10 @@ async fn a_failed_sink_should_refuse_the_stream_as_internal() {
     let (addr, mut events) = start(trusting("phone-1"), 47811).await;
     let mut client = Client::connect(addr).await;
     client.send(&ControlMessage::Hello(hello())).await;
-    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+    assert!(matches!(
+        client.recv().await,
+        Some(ControlMessage::HelloAck(_))
+    ));
 
     client.send(&mic_start()).await;
     answer_stream_start(&mut events, Err(StreamRefusal::Internal)).await;
@@ -476,7 +484,10 @@ async fn a_stream_outside_the_negotiated_caps_should_be_refused() {
             ..hello()
         }))
         .await;
-    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+    assert!(matches!(
+        client.recv().await,
+        Some(ControlMessage::HelloAck(_))
+    ));
 
     client.send(&mic_start()).await;
 
@@ -512,7 +523,10 @@ async fn a_stream_stop_should_report_the_stream_as_stopped() {
     let (addr, mut events) = start(trusting("phone-1"), 47811).await;
     let mut client = Client::connect(addr).await;
     client.send(&ControlMessage::Hello(hello())).await;
-    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+    assert!(matches!(
+        client.recv().await,
+        Some(ControlMessage::HelloAck(_))
+    ));
 
     client.send(&mic_start()).await;
     answer_stream_start(&mut events, Ok(())).await;
@@ -531,7 +545,10 @@ async fn a_dead_connection_should_stop_its_streams() {
     let (addr, mut events) = start(trusting("phone-1"), 47811).await;
     let mut client = Client::connect(addr).await;
     client.send(&ControlMessage::Hello(hello())).await;
-    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+    assert!(matches!(
+        client.recv().await,
+        Some(ControlMessage::HelloAck(_))
+    ));
 
     client.send(&mic_start()).await;
     answer_stream_start(&mut events, Ok(())).await;
@@ -554,7 +571,10 @@ async fn a_start_request_the_desktop_cannot_source_should_be_refused() {
     let (addr, _events) = start(trusting("phone-1"), 47811).await;
     let mut client = Client::connect(addr).await;
     client.send(&ControlMessage::Hello(hello())).await;
-    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+    assert!(matches!(
+        client.recv().await,
+        Some(ControlMessage::HelloAck(_))
+    ));
 
     // The camera is sourced by the phone; asking the desktop to send it is nonsense.
     client
@@ -580,7 +600,10 @@ async fn a_speaker_request_without_the_capability_should_be_refused_as_not_negot
     let mut client = Client::connect(addr).await;
     // hello() offers cam+mic only, so spk is not in the intersection.
     client.send(&ControlMessage::Hello(hello())).await;
-    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+    assert!(matches!(
+        client.recv().await,
+        Some(ControlMessage::HelloAck(_))
+    ));
 
     client
         .send(&ControlMessage::StreamRequest {
@@ -608,7 +631,10 @@ async fn a_negotiated_speaker_request_should_reach_the_application_layer() {
         ..hello()
     };
     client.send(&ControlMessage::Hello(speaker_phone)).await;
-    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+    assert!(matches!(
+        client.recv().await,
+        Some(ControlMessage::HelloAck(_))
+    ));
 
     client
         .send(&ControlMessage::StreamRequest {
@@ -638,7 +664,10 @@ async fn a_peers_stream_ack_should_reach_the_application_layer() {
     let (addr, mut events) = start(trusting("phone-1"), 47811).await;
     let mut client = Client::connect(addr).await;
     client.send(&ControlMessage::Hello(hello())).await;
-    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+    assert!(matches!(
+        client.recv().await,
+        Some(ControlMessage::HelloAck(_))
+    ));
 
     // The phone answering a desktop-sourced stream_start.
     client
@@ -675,7 +704,10 @@ async fn a_peers_stop_of_a_desktop_sourced_stream_should_reach_the_application_l
     let (addr, mut events) = start(trusting("phone-1"), 47811).await;
     let mut client = Client::connect(addr).await;
     client.send(&ControlMessage::Hello(hello())).await;
-    assert!(matches!(client.recv().await, Some(ControlMessage::HelloAck(_))));
+    assert!(matches!(
+        client.recv().await,
+        Some(ControlMessage::HelloAck(_))
+    ));
 
     // The speaker never lives in the sink-side stream map, so its stop must still be
     // forwarded — the desktop's capture would otherwise outlive the phone that ended it.
