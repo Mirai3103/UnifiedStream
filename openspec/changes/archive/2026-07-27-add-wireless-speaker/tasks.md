@@ -30,8 +30,3 @@
 
 - [x] 5.1 Loopback integration test in Rust: synthetic stereo PCM frames through capture buffer → sender → transport → reassembly, asserting byte-identical interleaved audio, 4-fragment framing of 3840-byte frames, and one-frame loss cost
 - [x] 5.2 Manual E2E on CachyOS: play music into "UnifiedStream Speaker" (visible in pavucontrol) → hear it on the phone; verify phone toggle via `stream_request`, desktop mute → phone silence, volume slider, background playback, route-toggle default restore (including after a forced kill), reconnect mid-stream, and no orphaned node after exit; note observed latency in the change notes
-
-## 6. Opus (stretch — change is complete without it)
-
-- [ ] 6.1 Desktop: encode 20 ms stereo frames via the `opus` crate, offer `opus` in `stream_start` only when the encoder initializes
-- [ ] 6.2 Android: runtime-probe MediaCodec Opus decoder, accept `opus` in `stream_start` only when present, decode into the same jitter buffer; extend the loopback test to Opus

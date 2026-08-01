@@ -31,8 +31,3 @@
 
 - [x] 5.1 Loopback integration test in Rust: synthetic PCM frames through sender → transport → reassembly → jitter buffer, asserting byte-identical audio, one-frame loss cost, and underrun/overrun behavior
 - [x] 5.2 Manual E2E on CachyOS: phone mic → "UnifiedStream Microphone" visible in pavucontrol → record in a real app; verify mute, gain, remote toggle from desktop, reconnect mid-stream, and no orphaned node after exit; note observed latency in the change notes
-
-## 6. Opus (stretch — change is complete without it)
-
-- [ ] 6.1 Android: runtime-probe MediaCodec Opus encoder (API 29+), offer `opus` in `stream_start` only when present, encode 20 ms frames
-- [ ] 6.2 Desktop: decode Opus via the `opus` crate behind the same receive path; accept/refuse codec per negotiation; extend the loopback test to Opus

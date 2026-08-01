@@ -35,4 +35,3 @@
 
 - [ ] 6.1 Sender-side quality autotune: drop the JPEG quality constant one step when telemetry loss exceeds a threshold for several seconds (static knob remains the spec'd behaviour; this is polish, not adaptive bitrate)
 - [ ] 6.2 Improve delivered fps (user-requested follow-up, 2026-07-27): profile the phone encode path at 720p30 — NV21 repack allocates a fresh buffer per frame and `YuvImage.compressToJpeg` is software; candidates are buffer reuse, a lower JPEG quality constant, and a second encode thread. Measure whether the bottleneck is camera exposure (~15 fps in dim light), encode time, or Wi-Fi loss before optimizing.
-- [ ] 6.3 H.264 via MediaCodec as a negotiated codec (a separate change per the proposal) — the real fix for both bandwidth and CPU at 720p+; the PCM→Opus-style negotiation seam is already in place.
