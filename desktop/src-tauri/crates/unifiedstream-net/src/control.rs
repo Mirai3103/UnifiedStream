@@ -311,9 +311,15 @@ struct ActiveSession {
     /// Identifies which connection owns this session, so a connection that has already been
     /// superseded cannot clear a newer one on its way out.
     connection_id: u64,
-    #[allow(dead_code, reason = "recorded for the revoke path added with the pairing UI")]
+    #[allow(
+        dead_code,
+        reason = "recorded for the revoke path added with the pairing UI"
+    )]
     peer_id: String,
-    #[allow(dead_code, reason = "surfaced by the dashboard once the UI reads it directly")]
+    #[allow(
+        dead_code,
+        reason = "surfaced by the dashboard once the UI reads it directly"
+    )]
     peer_name: String,
     negotiated_caps: Vec<String>,
     #[allow(dead_code, reason = "kept for logging and the revoke UI")]
@@ -347,7 +353,10 @@ impl ControlHandle {
                 .map(|s| s.outbound.clone())
                 .ok_or(NetError::NoSession)?
         };
-        outbound.send(message).await.map_err(|_| NetError::NoSession)
+        outbound
+            .send(message)
+            .await
+            .map_err(|_| NetError::NoSession)
     }
 
     /// Report this side's link quality to the peer.
@@ -460,7 +469,10 @@ impl ControlHandle {
 /// zero, which the receive path treats as "no session".
 #[must_use]
 pub fn new_session_id() -> u64 {
-    #[allow(clippy::cast_possible_truncation, reason = "truncation to 64 bits is the point")]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "truncation to 64 bits is the point"
+    )]
     let low = uuid::Uuid::new_v4().as_u128() as u64;
     low | 1
 }
@@ -581,7 +593,10 @@ impl ControlServer {
         // A dead session implies a stop for every stream it carried, with no `stream_stop`
         // messages required — the sink must not outlive the peer feeding it.
         for stream in stopped {
-            let _ = self.events.send(ControlEvent::StreamStopped { stream }).await;
+            let _ = self
+                .events
+                .send(ControlEvent::StreamStopped { stream })
+                .await;
         }
 
         let _ = self
@@ -686,7 +701,10 @@ impl ControlServer {
 
             ControlMessage::Pong { timestamp } => {
                 let rtt_us = now_micros().saturating_sub(timestamp);
-                #[allow(clippy::cast_precision_loss, reason = "microseconds fit f64 exactly here")]
+                #[allow(
+                    clippy::cast_precision_loss,
+                    reason = "microseconds fit f64 exactly here"
+                )]
                 let rtt_ms = rtt_us as f64 / 1000.0;
                 let _ = self.events.send(ControlEvent::RttSample(rtt_ms)).await;
                 Ok(false)
@@ -781,7 +799,10 @@ impl ControlServer {
                 .is_some_and(|s| s.active_streams.remove(&stream).is_some())
         };
         if was_active {
-            let _ = self.events.send(ControlEvent::StreamStopped { stream }).await;
+            let _ = self
+                .events
+                .send(ControlEvent::StreamStopped { stream })
+                .await;
         }
 
         let (respond, ready) = oneshot::channel();
@@ -885,7 +906,10 @@ impl ControlServer {
         // though it was never in the map.
         if was_active || StreamId(stream) == StreamId::SPEAKER {
             tracing::info!(stream, "stream stopped by peer");
-            let _ = self.events.send(ControlEvent::StreamStopped { stream }).await;
+            let _ = self
+                .events
+                .send(ControlEvent::StreamStopped { stream })
+                .await;
         }
     }
 
@@ -895,10 +919,16 @@ impl ControlServer {
         ctx: &ConnectionCtx<'_>,
         write_half: &mut tokio::net::tcp::OwnedWriteHalf,
     ) -> Result<bool> {
-        let active = self.shared.lock().await.session.as_ref().map(|s| ActiveSessionInfo {
-            session_id: s.session_id,
-            device_id: s.peer_id.clone(),
-        });
+        let active = self
+            .shared
+            .lock()
+            .await
+            .session
+            .as_ref()
+            .map(|s| ActiveSessionInfo {
+                session_id: s.session_id,
+                device_id: s.peer_id.clone(),
+            });
         let trusted = self.trust.lock().await.is_trusted(&hello.device_id);
 
         match evaluate_hello(&hello, active.as_ref(), trusted) {
@@ -1013,7 +1043,10 @@ impl ControlServer {
             displaced
         };
         for stream in displaced {
-            let _ = self.events.send(ControlEvent::StreamStopped { stream }).await;
+            let _ = self
+                .events
+                .send(ControlEvent::StreamStopped { stream })
+                .await;
         }
 
         tracing::info!(

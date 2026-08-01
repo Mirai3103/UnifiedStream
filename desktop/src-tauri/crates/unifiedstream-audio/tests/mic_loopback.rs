@@ -88,7 +88,11 @@ fn pcm_frames_should_arrive_byte_identical_through_the_full_path() {
         assert_eq!(out, samples, "frame {index} must round-trip byte-identical");
     }
 
-    assert_eq!(rx.buffer.stats().underruns, 0, "a lockstep drain never underruns");
+    assert_eq!(
+        rx.buffer.stats().underruns,
+        0,
+        "a lockstep drain never underruns"
+    );
 }
 
 #[test]
@@ -122,7 +126,10 @@ fn a_lost_fragment_should_cost_exactly_one_frame() {
         (total - 1) as u64,
         "every frame but the damaged one must be delivered"
     );
-    assert_eq!(stats.incomplete_frames, 1, "the damaged frame is discarded whole");
+    assert_eq!(
+        stats.incomplete_frames, 1,
+        "the damaged frame is discarded whole"
+    );
     assert_eq!(stats.lost, 1, "exactly one packet went missing");
 
     // And the audio that did arrive is intact: the buffer holds the last frames, undamaged.

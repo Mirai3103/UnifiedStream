@@ -100,8 +100,22 @@ impl MediaHeader {
         let sid = self.session_id.to_be_bytes();
 
         [
-            flags, self.stream.0, seq[0], seq[1], ts[0], ts[1], ts[2], ts[3], sid[0], sid[1],
-            sid[2], sid[3], sid[4], sid[5], sid[6], sid[7],
+            flags,
+            self.stream.0,
+            seq[0],
+            seq[1],
+            ts[0],
+            ts[1],
+            ts[2],
+            ts[3],
+            sid[0],
+            sid[1],
+            sid[2],
+            sid[3],
+            sid[4],
+            sid[5],
+            sid[6],
+            sid[7],
         ]
     }
 

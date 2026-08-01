@@ -25,8 +25,8 @@ use unifiedstream_net::protocol::{
 use unifiedstream_net::session::ConnectionState;
 use unifiedstream_net::telemetry::{LinkQuality, TelemetryCollector, REPORT_INTERVAL};
 use unifiedstream_net::transport::{
-    MediaDemux, MediaSender, MediaSocket, TestStreamConfig, TestStreamGenerator,
-    TestStreamReport, TestStreamVerifier, MAX_DATAGRAM,
+    MediaDemux, MediaSender, MediaSocket, TestStreamConfig, TestStreamGenerator, TestStreamReport,
+    TestStreamVerifier, MAX_DATAGRAM,
 };
 use unifiedstream_net::{DEFAULT_CONTROL_PORT, DEFAULT_MEDIA_PORT};
 use unifiedstream_video::{V4l2LoopbackSink, VideoFormat, VideoSink, MODPROBE_HINT};
@@ -68,7 +68,10 @@ pub enum AppError {
 }
 
 impl Serialize for AppError {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
         serializer.serialize_str(&self.to_string())
     }
 }
@@ -425,7 +428,13 @@ pub async fn set_speaker_muted(
     }
     if muted {
         // The meter must read zero immediately, not freeze at its last value.
-        let _ = app.emit(events::SPEAKER_LEVEL, AudioLevel { rms: 0.0, peak: 0.0 });
+        let _ = app.emit(
+            events::SPEAKER_LEVEL,
+            AudioLevel {
+                rms: 0.0,
+                peak: 0.0,
+            },
+        );
     }
     emit_speaker_status(&app, &state).await;
     Ok(())
@@ -443,9 +452,7 @@ pub async fn set_speaker_routing(
         if !active {
             return Err(AppError::State("start the speaker first".to_owned()));
         }
-        enable_routing(&state)
-            .await
-            .map_err(AppError::State)?;
+        enable_routing(&state).await.map_err(AppError::State)?;
         state.speaker.lock().await.status.routed = true;
     } else {
         restore_routing(&state).await;
@@ -746,17 +753,17 @@ fn spawn_event_pump(
                     }
                 }
 
-                ControlEvent::StreamRequested { stream, active } => {
-                    if stream == StreamId::SPEAKER.get() {
-                        // The phone's toggle, protocol §3.9.4: honour it exactly as if the
-                        // desktop user had toggled locally.
-                        if active {
-                            if let Err(e) = start_speaker_stream(&app, &state).await {
-                                tracing::warn!(error = %e, "phone-requested speaker start failed");
-                            }
-                        } else {
-                            stop_speaker(&app, &state, true).await;
+                ControlEvent::StreamRequested { stream, active }
+                    if stream == StreamId::SPEAKER.get() =>
+                {
+                    // The phone's toggle, protocol §3.9.4: honour it exactly as if the
+                    // desktop user had toggled locally.
+                    if active {
+                        if let Err(e) = start_speaker_stream(&app, &state).await {
+                            tracing::warn!(error = %e, "phone-requested speaker start failed");
                         }
+                    } else {
+                        stop_speaker(&app, &state, true).await;
                     }
                 }
 
@@ -1025,7 +1032,10 @@ fn spawn_camera_stats_task(
                 break;
             };
 
-            #[allow(clippy::cast_possible_truncation, reason = "fps over one second is tiny")]
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "fps over one second is tiny"
+            )]
             let fps = written.saturating_sub(last_written).min(1_000) as u32;
             last_written = written;
             let _ = app.emit(
@@ -1106,7 +1116,12 @@ async fn start_speaker_stream(app: &AppHandle, state: &Arc<AppState>) -> AppResu
         }
     }
 
-    if !control.negotiated_caps().await.iter().any(|c| c == caps::SPEAKER) {
+    if !control
+        .negotiated_caps()
+        .await
+        .iter()
+        .any(|c| c == caps::SPEAKER)
+    {
         set_speaker_error(app, state, "The phone does not accept a speaker stream").await;
         return Ok(());
     }
@@ -1306,7 +1321,13 @@ async fn stop_speaker(app: &AppHandle, state: &Arc<AppState>, notify_peer: bool)
         }
     }
 
-    let _ = app.emit(events::SPEAKER_LEVEL, AudioLevel { rms: 0.0, peak: 0.0 });
+    let _ = app.emit(
+        events::SPEAKER_LEVEL,
+        AudioLevel {
+            rms: 0.0,
+            peak: 0.0,
+        },
+    );
     emit_speaker_status(app, state).await;
 }
 
@@ -1579,7 +1600,10 @@ fn audio_level(samples: &[i16]) -> Option<AudioLevel> {
     }
     #[allow(clippy::cast_precision_loss, reason = "sample counts are tiny")]
     let rms = (sum_squares / samples.len() as f64).sqrt() / f64::from(i16::MAX);
-    #[allow(clippy::cast_possible_truncation, reason = "both values are within 0..=1")]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "both values are within 0..=1"
+    )]
     Some(AudioLevel {
         rms: (rms as f32).clamp(0.0, 1.0),
         peak: (f64::from(peak) / f64::from(i16::MAX)).clamp(0.0, 1.0) as f32,

@@ -31,10 +31,7 @@ pub(crate) mod u64_string {
 pub(crate) mod opt_u64_string {
     use serde::{Deserialize as _, Deserializer, Serializer};
 
-    pub fn serialize<S: Serializer>(
-        value: &Option<u64>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
+    pub fn serialize<S: Serializer>(value: &Option<u64>, serializer: S) -> Result<S::Ok, S::Error> {
         match value {
             Some(v) => serializer.serialize_str(&v.to_string()),
             None => serializer.serialize_none(),
@@ -535,14 +532,16 @@ mod tests {
         let original = ControlMessage::Ping {
             timestamp: 1_721_990_400_123_456,
         };
-        let parsed = ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
+        let parsed =
+            ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
         assert_eq!(parsed, original);
     }
 
     #[test]
     fn telemetry_should_round_trip_a_null_rtt() {
         let original = ControlMessage::Telemetry(TelemetryReport::default());
-        let parsed = ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
+        let parsed =
+            ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
         assert_eq!(parsed, original);
     }
 
@@ -578,7 +577,17 @@ mod tests {
 
     #[test]
     fn from_line_should_never_panic_on_arbitrary_text() {
-        for line in ["", " ", "\n", "null", "[]", "0", "\"bye\"", "{}", "{\"type\":null}"] {
+        for line in [
+            "",
+            " ",
+            "\n",
+            "null",
+            "[]",
+            "0",
+            "\"bye\"",
+            "{}",
+            "{\"type\":null}",
+        ] {
             let _ = ControlMessage::from_line(line);
         }
     }
@@ -602,7 +611,8 @@ mod tests {
             stream: 2,
             params: AudioParams::MICROPHONE_PCM.into(),
         };
-        let parsed = ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
+        let parsed =
+            ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
         assert_eq!(parsed, original);
     }
 
@@ -626,7 +636,8 @@ mod tests {
             stream: 1,
             params: VideoParams::CAMERA_MJPEG_720P.into(),
         };
-        let parsed = ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
+        let parsed =
+            ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
         assert_eq!(parsed, original);
     }
 
@@ -675,7 +686,10 @@ mod tests {
     #[test]
     fn an_accepting_stream_ack_should_omit_the_reason() {
         let line = ControlMessage::stream_accept(2).to_line().expect("encode");
-        assert_eq!(line.trim_end(), r#"{"type":"stream_ack","stream":2,"accepted":true}"#);
+        assert_eq!(
+            line.trim_end(),
+            r#"{"type":"stream_ack","stream":2,"accepted":true}"#
+        );
     }
 
     #[test]
@@ -693,7 +707,8 @@ mod tests {
     #[test]
     fn stream_stop_should_round_trip_through_a_line() {
         let original = ControlMessage::StreamStop { stream: 2 };
-        let parsed = ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
+        let parsed =
+            ControlMessage::from_line(&original.to_line().expect("encode")).expect("decode");
         assert_eq!(parsed, original);
     }
 

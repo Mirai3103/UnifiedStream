@@ -101,7 +101,10 @@ impl ThroughputMeter {
         self.last_mbps = if elapsed <= 0.0 {
             0.0
         } else {
-            #[allow(clippy::cast_precision_loss, reason = "byte counts stay far below 2^53")]
+            #[allow(
+                clippy::cast_precision_loss,
+                reason = "byte counts stay far below 2^53"
+            )]
             let bits = (self.bytes as f64) * 8.0;
             bits / elapsed / 1_000_000.0
         };
@@ -143,7 +146,10 @@ impl JitterEstimator {
 
     /// Record a packet's sender timestamp and local arrival time, both in microseconds.
     pub fn record(&mut self, sent_us: u64, arrived_us: u64) {
-        #[allow(clippy::cast_precision_loss, reason = "microsecond clocks fit f64 exactly here")]
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "microsecond clocks fit f64 exactly here"
+        )]
         let transit = arrived_us as f64 - sent_us as f64;
 
         if let Some(previous) = self.last_transit_us {
@@ -196,7 +202,10 @@ impl LossMeter {
         self.last_pct = if expected == 0 {
             0.0
         } else {
-            #[allow(clippy::cast_precision_loss, reason = "counter magnitudes stay below 2^53")]
+            #[allow(
+                clippy::cast_precision_loss,
+                reason = "counter magnitudes stay below 2^53"
+            )]
             let pct = (self.lost as f64 / expected as f64) * 100.0;
             pct
         };
@@ -364,7 +373,10 @@ mod tests {
             tracker.record(5.0);
         }
         let smoothed = tracker.smoothed_ms().unwrap_or_default();
-        assert!((smoothed - 5.0).abs() < 0.1, "should converge, got {smoothed}");
+        assert!(
+            (smoothed - 5.0).abs() < 0.1,
+            "should converge, got {smoothed}"
+        );
     }
 
     #[test]
@@ -501,7 +513,10 @@ mod tests {
 
     #[test]
     fn a_slow_link_should_be_degraded_then_poor() {
-        assert_eq!(LinkQuality::classify(Some(25.0), 0.0), LinkQuality::Degraded);
+        assert_eq!(
+            LinkQuality::classify(Some(25.0), 0.0),
+            LinkQuality::Degraded
+        );
         assert_eq!(LinkQuality::classify(Some(80.0), 0.0), LinkQuality::Poor);
     }
 
@@ -545,7 +560,10 @@ mod tests {
         collector.reset();
 
         let report = collector.sample();
-        assert_eq!(report.rtt_ms, None, "a dead session must not show a stale RTT");
+        assert_eq!(
+            report.rtt_ms, None,
+            "a dead session must not show a stale RTT"
+        );
         assert!((report.loss_pct - 0.0).abs() < f64::EPSILON);
         assert_eq!(collector.quality(), LinkQuality::Unknown);
     }

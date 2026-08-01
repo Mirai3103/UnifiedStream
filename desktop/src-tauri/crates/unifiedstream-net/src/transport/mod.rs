@@ -121,10 +121,9 @@ impl MediaDemux {
     /// Counters summed across every registered stream.
     #[must_use]
     pub fn total_stats(&self) -> StreamStats {
-        self.streams
-            .values()
-            .map(StreamReceiver::stats)
-            .fold(StreamStats::default(), |mut acc, s| {
+        self.streams.values().map(StreamReceiver::stats).fold(
+            StreamStats::default(),
+            |mut acc, s| {
                 acc.received += s.received;
                 acc.lost += s.lost;
                 acc.late += s.late;
@@ -132,7 +131,8 @@ impl MediaDemux {
                 acc.delivered_frames += s.delivered_frames;
                 acc.bytes += s.bytes;
                 acc
-            })
+            },
+        )
     }
 
     /// Feed one datagram, returning any frames it completed.
@@ -376,7 +376,9 @@ mod tests {
         let mut demux = MediaDemux::new(7);
         demux.register(StreamId::TEST);
 
-        let payload: Vec<u8> = (0..(MAX_PAYLOAD * 4 + 7)).map(|i| (i % 253) as u8).collect();
+        let payload: Vec<u8> = (0..(MAX_PAYLOAD * 4 + 7))
+            .map(|i| (i % 253) as u8)
+            .collect();
         let datagrams = tx.frame_at(StreamId::TEST, &payload, 5_000);
         assert!(datagrams.len() > 1, "this payload must fragment");
 
@@ -401,7 +403,9 @@ mod tests {
         let opener = tx.frame_at(StreamId::TEST, b"start", 1_000);
         assert_eq!(demux.accept(&opener[0]).expect("must be accepted").len(), 1);
 
-        let payload: Vec<u8> = (0..(MAX_PAYLOAD * 2 + 5)).map(|i| (i % 251) as u8).collect();
+        let payload: Vec<u8> = (0..(MAX_PAYLOAD * 2 + 5))
+            .map(|i| (i % 251) as u8)
+            .collect();
         let mut datagrams = tx.frame_at(StreamId::TEST, &payload, 5_000);
         datagrams.swap(0, 1);
 
@@ -455,7 +459,11 @@ mod tests {
             delivered.extend(demux.accept(datagram).expect("must be accepted"));
         }
 
-        assert_eq!(delivered.len(), 1, "the receiver must recover on the next frame");
+        assert_eq!(
+            delivered.len(),
+            1,
+            "the receiver must recover on the next frame"
+        );
         assert_eq!(delivered[0].payload, second);
     }
 
@@ -557,8 +565,9 @@ mod tests {
         let receiver = MediaSocket::bind_on(0).await.expect("bind receiver");
         let sender = MediaSocket::bind_on(0).await.expect("bind sender");
 
-        let receiver_addr: SocketAddr =
-            format!("127.0.0.1:{}", receiver.local_port()).parse().expect("addr");
+        let receiver_addr: SocketAddr = format!("127.0.0.1:{}", receiver.local_port())
+            .parse()
+            .expect("addr");
         sender.set_peer(receiver_addr).await;
 
         let mut tx = sender_for(7);
@@ -567,13 +576,11 @@ mod tests {
         sender.send_all(&datagrams).await.expect("send");
 
         let mut buf = [0_u8; MAX_DATAGRAM];
-        let (len, _from) = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            receiver.recv(&mut buf),
-        )
-        .await
-        .expect("must arrive")
-        .expect("recv");
+        let (len, _from) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), receiver.recv(&mut buf))
+                .await
+                .expect("must arrive")
+                .expect("recv");
 
         let mut demux = MediaDemux::new(7);
         demux.register(StreamId::TEST);
@@ -590,8 +597,9 @@ mod tests {
         let receiver = MediaSocket::bind_on(0).await.expect("bind receiver");
         let sender = MediaSocket::bind_on(0).await.expect("bind sender");
 
-        let receiver_addr: SocketAddr =
-            format!("127.0.0.1:{}", receiver.local_port()).parse().expect("addr");
+        let receiver_addr: SocketAddr = format!("127.0.0.1:{}", receiver.local_port())
+            .parse()
+            .expect("addr");
         sender.set_peer(receiver_addr).await;
 
         let mut tx = sender_for(7);
@@ -606,13 +614,11 @@ mod tests {
         let mut delivered = Vec::new();
         let mut buf = [0_u8; MAX_DATAGRAM];
         for _ in 0..3 {
-            let (len, _) = tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                receiver.recv(&mut buf),
-            )
-            .await
-            .expect("must arrive")
-            .expect("recv");
+            let (len, _) =
+                tokio::time::timeout(std::time::Duration::from_secs(5), receiver.recv(&mut buf))
+                    .await
+                    .expect("must arrive")
+                    .expect("recv");
             delivered.extend(
                 demux
                     .accept(buf.get(..len).expect("length within buffer"))

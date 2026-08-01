@@ -150,8 +150,7 @@ fn build_and_run(
 ) -> Result<(), String> {
     pw::init();
 
-    let mainloop =
-        pw::main_loop::MainLoopRc::new(None).map_err(|e| format!("main loop: {e}"))?;
+    let mainloop = pw::main_loop::MainLoopRc::new(None).map_err(|e| format!("main loop: {e}"))?;
     let context =
         pw::context::ContextRc::new(&mainloop, None).map_err(|e| format!("context: {e}"))?;
     let core = context

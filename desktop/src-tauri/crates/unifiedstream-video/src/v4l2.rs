@@ -58,7 +58,10 @@ pub fn find_loopback_device() -> Result<LoopbackDevice, VideoError> {
         if caps.driver != LOOPBACK_DRIVER {
             continue;
         }
-        if !caps.capabilities.contains(v4l::capability::Flags::VIDEO_OUTPUT) {
+        if !caps
+            .capabilities
+            .contains(v4l::capability::Flags::VIDEO_OUTPUT)
+        {
             // exclusive_caps=1 and someone else is already writing to it.
             continue;
         }
@@ -148,9 +151,9 @@ impl VideoSink for V4l2LoopbackSink {
         let device = v4l::Device::with_path(&target.path)
             .map_err(|e| VideoError::Unavailable(format!("{}: {e}", target.path.display())))?;
         let wanted = v4l::Format::new(format.width, format.height, FourCC::new(b"YU12"));
-        let actual = device
-            .set_format(&wanted)
-            .map_err(|e| VideoError::Unavailable(format!("could not set the device format: {e}")))?;
+        let actual = device.set_format(&wanted).map_err(|e| {
+            VideoError::Unavailable(format!("could not set the device format: {e}"))
+        })?;
         if (actual.width, actual.height) != (format.width, format.height)
             || actual.fourcc != FourCC::new(b"YU12")
         {
@@ -205,7 +208,9 @@ impl VideoSink for V4l2LoopbackSink {
                     counters.written.fetch_add(1, Ordering::Relaxed);
                 }
             })
-            .map_err(|e| VideoError::Unavailable(format!("could not spawn the sink worker: {e}")))?;
+            .map_err(|e| {
+                VideoError::Unavailable(format!("could not spawn the sink worker: {e}"))
+            })?;
 
         tracing::info!(
             device = %target.path.display(),

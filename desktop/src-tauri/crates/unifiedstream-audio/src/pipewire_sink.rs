@@ -144,8 +144,7 @@ fn build_and_run(
 ) -> Result<(), String> {
     pw::init();
 
-    let mainloop =
-        pw::main_loop::MainLoopRc::new(None).map_err(|e| format!("main loop: {e}"))?;
+    let mainloop = pw::main_loop::MainLoopRc::new(None).map_err(|e| format!("main loop: {e}"))?;
     let context =
         pw::context::ContextRc::new(&mainloop, None).map_err(|e| format!("context: {e}"))?;
     let core = context
@@ -199,7 +198,10 @@ fn build_and_run(
             // S16LE bytes off the graph, into host-order samples, into exact frames.
             let samples: Vec<i16> = valid
                 .chunks_exact(2)
-                .map(|pair| i16::from_le_bytes([pair[0], pair[1]]))
+                .filter_map(|pair| match pair {
+                    [low, high] => Some(i16::from_le_bytes([*low, *high])),
+                    _ => None,
+                })
                 .collect();
             chunker.push(&samples, &mut on_frame);
         })

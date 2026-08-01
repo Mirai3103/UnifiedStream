@@ -63,7 +63,10 @@ impl StreamStats {
         if expected == 0 {
             return 0.0;
         }
-        #[allow(clippy::cast_precision_loss, reason = "counter magnitudes are far below 2^53")]
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "counter magnitudes are far below 2^53"
+        )]
         let pct = (self.lost as f64 / expected as f64) * 100.0;
         pct
     }
@@ -188,11 +191,7 @@ impl StreamReceiver {
     fn drain(&mut self) -> Vec<Frame> {
         let mut frames = Vec::new();
 
-        loop {
-            let Some((&next_seq, _)) = self.pending.iter().next() else {
-                break;
-            };
-
+        while let Some((&next_seq, _)) = self.pending.iter().next() {
             let in_order = match self.last_released {
                 None => true,
                 Some(last) => seq_distance(last, next_seq) == 1,
@@ -315,12 +314,10 @@ impl StreamReceiver {
     }
 
     fn fragments_are_contiguous(&self) -> bool {
-        self.fragments
-            .windows(2)
-            .all(|pair| match pair {
-                [a, b] => seq_distance(a.sequence, b.sequence) == 1,
-                _ => true,
-            })
+        self.fragments.windows(2).all(|pair| match pair {
+            [a, b] => seq_distance(a.sequence, b.sequence) == 1,
+            _ => true,
+        })
     }
 
     /// Release anything still held, ending any partial frame. Used at teardown.
@@ -413,7 +410,11 @@ mod tests {
         assert!(rx.accept(&header(2, 500, true, true), b"ghi").is_empty());
 
         let frames = rx.accept(&header(1, 500, true, false), b"def");
-        assert_eq!(frames.len(), 1, "the frame must complete once the gap fills");
+        assert_eq!(
+            frames.len(),
+            1,
+            "the frame must complete once the gap fills"
+        );
         assert_eq!(frames[0].payload, b"abcdefghi");
     }
 
@@ -427,7 +428,10 @@ mod tests {
         delivered.extend(rx.accept(&whole(1, 200), b"1"));
 
         let order: Vec<&[u8]> = delivered.iter().map(|f| f.payload.as_slice()).collect();
-        assert_eq!(order, vec![b"0".as_slice(), b"1".as_slice(), b"2".as_slice()]);
+        assert_eq!(
+            order,
+            vec![b"0".as_slice(), b"1".as_slice(), b"2".as_slice()]
+        );
     }
 
     #[test]
@@ -441,7 +445,10 @@ mod tests {
             delivered += rx.accept(&whole(seq, u32::from(seq) * 100), b"x").len();
         }
 
-        assert!(delivered > 0, "the buffer must release rather than wait forever");
+        assert!(
+            delivered > 0,
+            "the buffer must release rather than wait forever"
+        );
         assert!(rx.stats().lost >= 1, "the gap must be counted as loss");
     }
 
@@ -500,12 +507,17 @@ mod tests {
     fn an_incomplete_frame_should_be_discarded_when_a_newer_frame_starts() {
         let mut rx = StreamReceiver::new();
         // Frame A: two fragments, but the second is lost, so the marker never arrives.
-        assert!(rx.accept(&header(0, 500, true, false), b"partial").is_empty());
+        assert!(rx
+            .accept(&header(0, 500, true, false), b"partial")
+            .is_empty());
         // Frame B begins with a new timestamp.
         let frames = rx.accept(&header(1, 900, false, true), b"whole");
 
         assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0].payload, b"whole", "no partial frame may be delivered");
+        assert_eq!(
+            frames[0].payload, b"whole",
+            "no partial frame may be delivered"
+        );
         assert_eq!(rx.stats().incomplete_frames, 1);
     }
 
@@ -515,7 +527,10 @@ mod tests {
         rx.accept(&header(0, 500, true, false), b"aaa");
         // Fragment at sequence 1 is lost forever; push past the window so 2 is force-released.
         for seq in 2..=(2 + REORDER_WINDOW as u16) {
-            rx.accept(&header(seq, 500, true, seq == 2 + REORDER_WINDOW as u16), b"bbb");
+            rx.accept(
+                &header(seq, 500, true, seq == 2 + REORDER_WINDOW as u16),
+                b"bbb",
+            );
         }
         assert!(
             rx.stats().incomplete_frames >= 1,
@@ -631,7 +646,10 @@ mod tests {
         let over = u16::try_from(MAX_FRAME_BYTES / MAX_PAYLOAD + 8).expect("fits");
         for i in 0..over {
             let frames = rx.accept(&header(i, 3_000, true, false), &chunk);
-            assert!(frames.is_empty(), "an oversized frame must never be delivered");
+            assert!(
+                frames.is_empty(),
+                "an oversized frame must never be delivered"
+            );
         }
 
         assert!(
@@ -653,7 +671,11 @@ mod tests {
         }
 
         let frames = rx.accept(&whole(over, 4_000), b"next frame");
-        assert_eq!(frames.len(), 1, "the stream must recover after the oversized frame");
+        assert_eq!(
+            frames.len(),
+            1,
+            "the stream must recover after the oversized frame"
+        );
         assert_eq!(frames[0].payload, b"next frame");
     }
 

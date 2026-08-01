@@ -114,8 +114,14 @@ mod tests {
 
         // Gray has neutral chroma; luma sits near 128. JPEG is lossy, hence the tolerance.
         let (y_plane, chroma) = i420.split_at(64 * 48);
-        assert!(y_plane.iter().all(|&v| v.abs_diff(128) <= 4), "luma must be flat gray");
-        assert!(chroma.iter().all(|&v| v.abs_diff(128) <= 4), "chroma must be neutral");
+        assert!(
+            y_plane.iter().all(|&v| v.abs_diff(128) <= 4),
+            "luma must be flat gray"
+        );
+        assert!(
+            chroma.iter().all(|&v| v.abs_diff(128) <= 4),
+            "chroma must be neutral"
+        );
     }
 
     #[test]
