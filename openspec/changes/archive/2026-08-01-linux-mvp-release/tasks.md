@@ -51,5 +51,5 @@
 ## 7. Complete the OpenSpec Change
 
 - [x] 7.1 Reconcile implementation behavior and release documentation with the `linux-mvp-distribution` delta spec after verification.
-- [ ] 7.2 Sync the delta spec to the main specs and archive the completed change in the same implementation pull request before merge.
-- [ ] 7.3 Confirm all required pull-request checks pass before merge and document the post-merge `main` workflow monitoring and first-prerelease steps for the maintainer.
+- [x] 7.2 Sync the delta spec to the main specs and archive the completed change in the same implementation pull request before merge.
+- [x] 7.3 Confirm all required pull-request checks pass before merge and document the post-merge `main` workflow monitoring and first-prerelease steps for the maintainer.
