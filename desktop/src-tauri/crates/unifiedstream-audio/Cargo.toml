@@ -10,10 +10,10 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
-# Git rather than 0.8.0: the released libspa-sys bindings fail to build against the
-# PipeWire >= 1.2 headers this distro ships (spa_pod_builder became opaque to bindgen).
+# Pin the 0.9.2 source revision: it wraps PipeWire's newer inline SPA helpers while avoiding
+# the 0.10.0 SPA_ID_INVALID binding regression exposed by PipeWire 1.6 headers.
 # The v0_3_49 feature unlocks Buffer::requested, which sizes each pull to the graph quantum.
-pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs", rev = "5dd5dfad56bb0987e4d63af3d6f397e4a132dd9d", features = ["v0_3_49"] }
+pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs", rev = "03301bc734c9f1d3fb7a064c072458ad00245133", features = ["v0_3_49"] }
 
 [dev-dependencies]
 unifiedstream-net.workspace = true

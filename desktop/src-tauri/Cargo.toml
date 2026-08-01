@@ -34,8 +34,10 @@ indexing_slicing = "warn"
 
 [package]
 name = "desktop"
-description = "UnifiedStream desktop app"
-authors = ["you"]
+description = "UnifiedStream Linux desktop app"
+authors = ["UnifiedStream contributors"]
+homepage = "https://github.com/Mirai3103/UnifiedStream"
+repository = "https://github.com/Mirai3103/UnifiedStream"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

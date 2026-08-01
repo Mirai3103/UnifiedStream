@@ -25,7 +25,12 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["appimage", "deb"],
+    "publisher": "UnifiedStream contributors",
+    "homepage": "https://github.com/Mirai3103/UnifiedStream",
+    "category": "Video",
+    "shortDescription": "Use an Android phone as Linux camera, microphone, and speaker.",
+    "longDescription": "UnifiedStream connects an Android phone to a Linux PC over a trusted local network and exposes virtual camera and audio devices.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
