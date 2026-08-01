@@ -23,7 +23,7 @@
 ## 4. Verify CI and protect main
 
 - [x] 4.1 Push the feature branch and open a pull request for this change without committing directly to `main`.
-- [ ] 4.2 Confirm the `openspec`, `rust`, `android`, and `frontend` checks all run independently and pass on the pull request.
+- [x] 4.2 Confirm the `openspec`, `rust`, `android`, and `frontend` checks all run independently and pass on the pull request.
 - [ ] 4.3 Configure a GitHub ruleset for `main` that requires pull requests and the four checks, applies to administrators, and blocks force pushes and deletion; keep required approvals at zero until another maintainer is available.
 - [ ] 4.4 Inspect the active ruleset through GitHub settings or API and verify merge gating with the pull request, without testing protection through a real direct push.
 - [ ] 4.5 Merge through the pull request flow and confirm the post-merge `main` workflow passes.
