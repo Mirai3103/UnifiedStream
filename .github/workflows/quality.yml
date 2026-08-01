@@ -25,6 +25,8 @@ jobs:
         run: npm install --global @fission-ai/openspec@1.6.0
       - name: Validate OpenSpec artifacts
         run: openspec validate --all
+      - name: Validate release documentation
+        run: python3 scripts/check-markdown.py
 
   rust:
     name: rust

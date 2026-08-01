@@ -1,7 +1,40 @@
-# Tauri + React + Typescript
+# UnifiedStream desktop development
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+This directory contains the React, TypeScript, and Tauri 2 Linux desktop application. User installation and operating instructions live in the repository's [main README](../README.md) and [Linux guide](../docs/linux-installation.md).
 
-## Recommended IDE Setup
+## Prerequisites
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- Bun 1.3.14
+- Rust 1.82 or newer
+- Tauri 2 Linux build dependencies
+- PipeWire development headers
+
+Ubuntu package names used by CI are listed in [the quality workflow](../.github/workflows/quality.yml).
+
+## Develop
+
+```bash
+bun install --frozen-lockfile
+bun run tauri dev
+```
+
+## Validate
+
+```bash
+bun install --frozen-lockfile
+bun run build
+
+cd src-tauri
+cargo fmt --all -- --check
+cargo clippy --workspace --lib --bins -- -D warnings
+cargo test --workspace
+```
+
+## Build Linux bundles
+
+From the repository root, use the release script described in [the release guide](../docs/releasing.md). Direct Tauri builds can be run from this directory:
+
+```bash
+bun install --frozen-lockfile
+bun run tauri build --bundles appimage,deb --ci
+```
