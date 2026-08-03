@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>Unified Stream Android</title>
+  
+<meta name="design_doc_mode" content="canvas" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { font-family: Roboto, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: var(--m3-primary); text-decoration: none; }
+  a:hover { color: var(--m3-on-surface); }
+  [data-theme="dark"] {
+    --m3-surface: #0e1413; --m3-surface-c: #171d1c; --m3-surface-ch: #212827; --m3-surface-chh: #2b3231;
+    --m3-on-surface: #dee4e2; --m3-on-surface-var: #9aa5a2; --m3-outline: #56605e; --m3-outline-v: #3b4342;
+    --m3-primary: #7ad7c6; --m3-on-primary: #00382f; --m3-primary-c: #005046; --m3-on-primary-c: #9df1e0;
+    --m3-secondary-c: #2c4b46; --m3-on-secondary-c: #cde8e1; --m3-error: #ffb4ab;
+    --m3-scrim: rgba(0,0,0,0.55); --m3-stripe: rgba(255,255,255,0.06);
+    --page-bg: #0a0d0d; --page-fg: #cfd6d4;
+  }
+  [data-theme="light"] {
+    --m3-surface: #f5faf8; --m3-surface-c: #e9efed; --m3-surface-ch: #e3eae8; --m3-surface-chh: #dde4e2;
+    --m3-on-surface: #171d1b; --m3-on-surface-var: #3f4947; --m3-outline: #6f7977; --m3-outline-v: #bfc9c6;
+    --m3-primary: #00695f; --m3-on-primary: #ffffff; --m3-primary-c: #9df1e0; --m3-on-primary-c: #00201c;
+    --m3-secondary-c: #cde8e1; --m3-on-secondary-c: #062019; --m3-error: #ba1a1a;
+    --m3-scrim: rgba(0,0,0,0.42); --m3-stripe: rgba(16,24,22,0.07);
+    --page-bg: #eef2f0; --page-fg: #2b3331;
+  }
+  @keyframes vu { 0%,100% { transform: scaleY(0.2); } 50% { transform: scaleY(1); } }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+</style>
+
+</head>
+<body>
+  <main id="app"></main>
+  <template id="dc-template"><div data-theme="{{ theme }}" style="min-height: 100vh; box-sizing: border-box; padding: 44px 48px 64px; background: var(--page-bg); color: var(--page-fg);">
+
+  <div style="display: flex; align-items: flex-end; gap: 22px; margin-bottom: 34px; max-width: 1960px;">
+    <div style="display: flex; flex-direction: column; gap: 7px;">
+      <span style="font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.55;">Unified Stream · Android</span>
+      <span style="font-size: 30px; font-weight: 500; letter-spacing: -0.01em; color: var(--m3-on-surface);">Material 3 companion app</span>
+      <span style="font-size: 13.5px; opacity: 0.7; max-width: 620px;">Kotlin + Jetpack Compose · expressive M3 surfaces, tonal containers, dynamic teal accent shared with the desktop client.</span>
+    </div>
+    <div style="flex: 1;"></div>
+    <div onClick="{{ toggleTheme }}" style="display: flex; align-items: center; gap: 9px; cursor: pointer; user-select: none; padding: 10px 16px; border-radius: 99px; border: 1px solid var(--m3-outline-v); background: var(--m3-surface-c); color: var(--m3-on-surface); font-size: 13px;" style-hover="border-color: var(--m3-primary);">
+      <span style="width: 10px; height: 10px; border-radius: 99px; background: var(--m3-primary);"></span>
+      <span>{{ themeLabel }}</span>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 46px; align-items: flex-start;">
+
+    <!-- 1. HOME -->
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" dark="{{ isDark }}" hint-size="428px,908px">
+        <div style="height: 100%; display: flex; flex-direction: column; background: var(--m3-surface); color: var(--m3-on-surface); font-family: Roboto, sans-serif;">
+
+          <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px 0 16px;">
+            <span style="flex: 1; font-size: 15px; letter-spacing: 0.02em; color: var(--m3-on-surface-var);">Unified Stream</span>
+            <div style="width: 40px; height: 40px; border-radius: 99px; display: grid; place-items: center; background: var(--m3-surface-c);">
+              <span style="width: 14px; height: 14px; border-radius: 3px; border: 2px solid var(--m3-on-surface-var);"></span>
+            </div>
+          </div>
+          <div style="padding: 6px 16px 14px;">
+            <span style="font-size: 30px; font-weight: 400; letter-spacing: -0.01em;">Streaming</span>
+          </div>
+
+          <div style="flex: 1; overflow: hidden; padding: 0 16px 12px; display: flex; flex-direction: column; gap: 12px;">
+
+            <div style="border-radius: 26px; padding: 18px 20px; background: var(--m3-primary-c); color: var(--m3-on-primary-c); display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="width: 42px; height: 42px; border-radius: 99px; background: var(--m3-surface); display: grid; place-items: center;">
+                  <span style="width: 14px; height: 14px; border-radius: 4px; background: var(--m3-primary);"></span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span style="font-size: 16px; font-weight: 500;">arch-desktop</span>
+                  <span style="font-size: 12.5px; opacity: 0.8;">Wi-Fi 6 · 192.168.1.10</span>
+                </div>
+                <div style="flex: 1;"></div>
+                <div style="padding: 7px 13px; border-radius: 9px; background: var(--m3-surface); color: var(--m3-primary); font-size: 12px; font-weight: 500;">Connected</div>
+              </div>
+              <div style="display: flex; gap: 22px;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 19px;">{{ ping }} ms</span>
+                  <span style="font-size: 11px; opacity: 0.75;">latency</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 19px;">{{ mbps }}</span>
+                  <span style="font-size: 11px; opacity: 0.75;">Mbps up</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 19px;">{{ loss }}%</span>
+                  <span style="font-size: 11px; opacity: 0.75;">loss</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="border-radius: 26px; padding: 16px 18px; background: var(--m3-surface-c); display: flex; flex-direction: column; gap: 12px;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div style="width: 44px; height: 44px; border-radius: 14px; background: {{ camIconBg }}; display: grid; place-items: center;">
+                  <span style="width: 20px; height: 15px; border-radius: 4px; border: 2px solid {{ camIconFg }};"></span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 2px; flex: 1;">
+                  <span style="font-size: 16px; font-weight: 500;">Camera</span>
+                  <span style="font-size: 12.5px; color: var(--m3-on-surface-var);">{{ camLine }}</span>
+                </div>
+                <div onClick="{{ toggleCam }}" style="width: 52px; height: 32px; border-radius: 99px; box-sizing: border-box; cursor: pointer; padding: 4px; display: flex; align-items: center; border: 2px solid {{ camSw.border }}; background: {{ camSw.track }}; justify-content: {{ camSw.justify }};">
+                  <div style="border-radius: 99px; background: {{ camSw.thumb }}; width: {{ camSw.size }}; height: {{ camSw.size }};"></div>
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <sc-for list="{{ camChips }}" as="c" hint-placeholder-count="3">
+                  <div onClick="{{ c.go }}" style="padding: 7px 14px; border-radius: 8px; font-size: 12.5px; cursor: pointer; user-select: none; border: 1px solid {{ c.border }}; background: {{ c.bg }}; color: {{ c.fg }};">{{ c.label }}</div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="border-radius: 26px; padding: 16px 18px; background: var(--m3-surface-c); display: flex; flex-direction: column; gap: 12px;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div style="width: 44px; height: 44px; border-radius: 14px; background: {{ micIconBg }}; display: grid; place-items: center;">
+                  <span style="width: 11px; height: 20px; border-radius: 99px; border: 2px solid {{ micIconFg }};"></span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 2px; flex: 1;">
+                  <span style="font-size: 16px; font-weight: 500;">Microphone</span>
+                  <span style="font-size: 12.5px; color: var(--m3-on-surface-var);">{{ micLine }}</span>
+                </div>
+                <div onClick="{{ toggleMic }}" style="width: 52px; height: 32px; border-radius: 99px; box-sizing: border-box; cursor: pointer; padding: 4px; display: flex; align-items: center; border: 2px solid {{ micSw.border }}; background: {{ micSw.track }}; justify-content: {{ micSw.justify }};">
+                  <div style="border-radius: 99px; background: {{ micSw.thumb }}; width: {{ micSw.size }}; height: {{ micSw.size }};"></div>
+                </div>
+              </div>
+              <div style="height: 40px; border-radius: 14px; background: var(--m3-surface-ch); display: flex; align-items: center; justify-content: center; padding: 0 14px; overflow: hidden;">
+                {{ micVu }}
+              </div>
+            </div>
+
+            <div style="border-radius: 26px; padding: 16px 18px; background: var(--m3-surface-c); display: flex; flex-direction: column; gap: 12px;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div style="width: 44px; height: 44px; border-radius: 14px; background: {{ spkIconBg }}; display: grid; place-items: center;">
+                  <span style="width: 18px; height: 18px; border-radius: 99px; border: 2px solid {{ spkIconFg }};"></span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 2px; flex: 1;">
+                  <span style="font-size: 16px; font-weight: 500;">Speaker</span>
+                  <span style="font-size: 12.5px; color: var(--m3-on-surface-var);">{{ spkLine }}</span>
+                </div>
+                <div onClick="{{ toggleSpk }}" style="width: 52px; height: 32px; border-radius: 99px; box-sizing: border-box; cursor: pointer; padding: 4px; display: flex; align-items: center; border: 2px solid {{ spkSw.border }}; background: {{ spkSw.track }}; justify-content: {{ spkSw.justify }};">
+                  <div style="border-radius: 99px; background: {{ spkSw.thumb }}; width: {{ spkSw.size }}; height: {{ spkSw.size }};"></div>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="font-size: 12px; color: var(--m3-on-surface-var); width: 54px;">Volume</span>
+                <div style="flex: 1; height: 16px; display: flex; align-items: center; position: relative;">
+                  <div style="position: absolute; left: 0; right: 0; height: 6px; border-radius: 99px; background: var(--m3-surface-chh);"></div>
+                  <div style="position: absolute; left: 0; height: 6px; border-radius: 99px; background: var(--m3-primary); width: {{ volPct }};"></div>
+                  <div style="position: absolute; width: 4px; height: 22px; border-radius: 99px; background: var(--m3-primary); left: {{ volPct }};"></div>
+                </div>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; width: 34px; text-align: right;">{{ vol }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 0 16px 14px; display: flex; justify-content: flex-end;">
+            <div onClick="{{ toggleAll }}" style="display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 22px; border-radius: 18px; cursor: pointer; user-select: none; background: var(--m3-primary); color: var(--m3-on-primary); font-size: 15px; font-weight: 500; box-shadow: 0 6px 18px rgba(0,0,0,0.22);">
+              <span style="width: 12px; height: 12px; border-radius: 3px; background: currentColor;"></span>
+              <span>{{ fabLabel }}</span>
+            </div>
+          </div>
+
+          <div style="height: 78px; display: flex; align-items: flex-start; padding-top: 12px; background: var(--m3-surface-c);">
+            <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+              <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                <div style="width: 62px; height: 32px; border-radius: 99px; display: grid; place-items: center; background: {{ t.pill }};">
+                  <span style="width: 16px; height: 16px; border-radius: 5px; border: 2px solid {{ t.fg }};"></span>
+                </div>
+                <span style="font-size: 12px; font-weight: 500; color: {{ t.fg }};">{{ t.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </x-import>
+      <span style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.5; text-align: center;">Home</span>
+    </div>
+
+    <!-- 2. CAMERA -->
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" dark="{{ isDark }}" hint-size="428px,908px">
+        <div style="height: 100%; display: flex; flex-direction: column; background: #0b0f0f; color: #fff; font-family: Roboto, sans-serif; position: relative;">
+          <div style="position: absolute; inset: 0; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.05) 0 10px, transparent 10px 20px);"></div>
+          <div style="position: absolute; inset: 0; display: grid; place-items: center;">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; opacity: 0.5;">
+              <div style="width: 54px; height: 38px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.6);"></div>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">viewfinder feed</span>
+            </div>
+          </div>
+
+          <div style="position: relative; display: flex; align-items: center; gap: 8px; padding: 14px 16px;">
+            <div style="width: 40px; height: 40px; border-radius: 99px; background: rgba(0,0,0,0.4); display: grid; place-items: center;">
+              <span style="width: 12px; height: 12px; border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(45deg); margin-left: 4px;"></span>
+            </div>
+            <div style="flex: 1;"></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 13px; border-radius: 99px; background: rgba(0,0,0,0.45); font-size: 12px;">
+              <span style="width: 7px; height: 7px; border-radius: 99px; background: #ff5a4d; animation: blink 1.6s ease-in-out infinite;"></span>
+              <span style="font-family: 'JetBrains Mono', monospace;">LIVE · 00:14:07</span>
+            </div>
+          </div>
+
+          <div style="flex: 1;"></div>
+
+          <div style="position: relative; display: flex; gap: 8px; padding: 0 16px 14px; overflow: hidden;">
+            <sc-for list="{{ camOverlayChips }}" as="c" hint-placeholder-count="4">
+              <div onClick="{{ c.go }}" style="padding: 8px 14px; border-radius: 99px; font-size: 12.5px; cursor: pointer; user-select: none; white-space: nowrap; background: {{ c.bg }}; color: {{ c.fg }}; border: 1px solid rgba(255,255,255,0.22);">{{ c.label }}</div>
+            </sc-for>
+          </div>
+
+          <div style="position: relative; border-radius: 28px 28px 0 0; background: var(--m3-surface); color: var(--m3-on-surface); padding: 10px 20px 18px; display: flex; flex-direction: column; gap: 16px;">
+            <div style="width: 32px; height: 4px; border-radius: 99px; background: var(--m3-outline); align-self: center; opacity: 0.6;"></div>
+
+            <div style="display: flex; align-items: center; gap: 16px;">
+              <div style="width: 56px; height: 56px; border-radius: 18px; background: var(--m3-surface-c); display: grid; place-items: center; cursor: pointer;">
+                <span style="width: 20px; height: 20px; border-radius: 99px; border: 2px solid var(--m3-on-surface-var);"></span>
+              </div>
+              <div onClick="{{ toggleCam }}" style="flex: 1; height: 56px; border-radius: 18px; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; user-select: none; background: {{ camBtnBg }}; color: {{ camBtnFg }}; font-size: 15px; font-weight: 500;">
+                <span style="width: 12px; height: 12px; border-radius: {{ camBtnShape }}; background: currentColor;"></span>
+                <span>{{ camBtnLabel }}</span>
+              </div>
+              <div onClick="{{ toggleFlash }}" style="width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; cursor: pointer; background: {{ flashBg }};">
+                <span style="width: 16px; height: 16px; border-radius: 4px; border: 2px solid {{ flashFg }};"></span>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 9px;">
+              <span style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--m3-on-surface-var);">Resolution</span>
+              <div style="display: flex; border-radius: 99px; overflow: hidden; border: 1px solid var(--m3-outline);">
+                <sc-for list="{{ resSeg }}" as="r" hint-placeholder-count="3">
+                  <div onClick="{{ r.go }}" style="flex: 1; height: 42px; display: flex; align-items: center; justify-content: center; gap: 7px; cursor: pointer; user-select: none; font-size: 13px; border-right: 1px solid var(--m3-outline); background: {{ r.bg }}; color: {{ r.fg }};">{{ r.label }}</div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 9px;">
+              <div style="display: flex; align-items: baseline;">
+                <span style="flex: 1; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--m3-on-surface-var);">Frame rate</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">{{ fps }} fps</span>
+              </div>
+              <div style="display: flex; gap: 10px;">
+                <sc-for list="{{ fpsSeg }}" as="f" hint-placeholder-count="3">
+                  <div onClick="{{ f.go }}" style="flex: 1; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; font-size: 13px; background: {{ f.bg }}; color: {{ f.fg }};">{{ f.label }}</div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 16px; background: var(--m3-surface-c); font-size: 12.5px; color: var(--m3-on-surface-var);">
+              <span style="width: 8px; height: 8px; border-radius: 99px; background: var(--m3-primary);"></span>
+              <span>H.264 hardware encode · 6.2 Mbps · {{ camLatency }} ms glass-to-glass</span>
+            </div>
+          </div>
+        </div>
+      </x-import>
+      <span style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.5; text-align: center;">Camera</span>
+    </div>
+
+    <!-- 3. DEVICES -->
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" dark="{{ isDark }}" hint-size="428px,908px">
+        <div style="height: 100%; display: flex; flex-direction: column; background: var(--m3-surface); color: var(--m3-on-surface); font-family: Roboto, sans-serif;">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px 0 16px;">
+            <span style="flex: 1; font-size: 22px;">Devices</span>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--m3-outline); font-size: 12.5px; color: var(--m3-on-surface-var);">
+              <span style="width: 8px; height: 8px; border-radius: 99px; background: var(--m3-primary); animation: blink 2s ease-in-out infinite;"></span>
+              <span>Scanning</span>
+            </div>
+          </div>
+
+          <div style="flex: 1; overflow: hidden; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 18px; border-radius: 99px; background: var(--m3-surface-c); color: var(--m3-on-surface-var); font-size: 14px;">
+              <span style="width: 14px; height: 14px; border-radius: 99px; border: 2px solid currentColor;"></span>
+              <span>Search by name or IP</span>
+            </div>
+
+            <span style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--m3-on-surface-var); padding: 4px 4px 0;">Found on this network</span>
+
+            <sc-for list="{{ hosts }}" as="h" hint-placeholder-count="3">
+              <div style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 22px; background: {{ h.bg }}; color: {{ h.fg }};">
+                <div style="width: 44px; height: 44px; border-radius: 14px; background: {{ h.iconBg }}; display: grid; place-items: center;">
+                  <span style="width: 18px; height: 14px; border-radius: 3px; border: 2px solid {{ h.iconFg }};"></span>
+                </div>
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+                  <span style="font-size: 15.5px; font-weight: 500;">{{ h.name }}</span>
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; opacity: 0.75;">{{ h.meta }}</span>
+                </div>
+                <div style="padding: 9px 16px; border-radius: 10px; font-size: 12.5px; font-weight: 500; background: {{ h.btnBg }}; color: {{ h.btnFg }};">{{ h.action }}</div>
+              </div>
+            </sc-for>
+
+            <div style="margin-top: 4px; border-radius: 24px; padding: 18px; background: var(--m3-surface-c); display: flex; gap: 16px; align-items: center;">
+              <div style="width: 92px; height: 92px; border-radius: 16px; background: repeating-linear-gradient(90deg, var(--m3-stripe) 0 6px, transparent 6px 12px), repeating-linear-gradient(0deg, var(--m3-stripe) 0 6px, transparent 6px 12px); border: 1px solid var(--m3-outline-v); display: grid; place-items: center;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--m3-on-surface-var);">QR</span>
+              </div>
+              <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+                <span style="font-size: 15px; font-weight: 500;">Pair by code</span>
+                <span style="font-size: 12.5px; color: var(--m3-on-surface-var); line-height: 1.45;">Scan the QR on the desktop app, or enter the 6-digit code manually.</span>
+                <div style="display: flex; gap: 8px; margin-top: 4px;">
+                  <div style="padding: 8px 14px; border-radius: 99px; background: var(--m3-primary); color: var(--m3-on-primary); font-size: 12.5px; font-weight: 500;">Scan</div>
+                  <div style="padding: 8px 14px; border-radius: 99px; border: 1px solid var(--m3-outline); font-size: 12.5px;">Enter code</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="border-radius: 20px; padding: 14px 16px; background: var(--m3-secondary-c); color: var(--m3-on-secondary-c); font-size: 12.5px; line-height: 1.5;">
+              mDNS service <span style="font-family: 'JetBrains Mono', monospace;">_ustream._udp.local</span> — no IP typing needed while both devices share the same Wi-Fi.
+            </div>
+          </div>
+
+          <div style="height: 78px; display: flex; align-items: flex-start; padding-top: 12px; background: var(--m3-surface-c);">
+            <sc-for list="{{ tabsDevices }}" as="t" hint-placeholder-count="3">
+              <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                <div style="width: 62px; height: 32px; border-radius: 99px; display: grid; place-items: center; background: {{ t.pill }};">
+                  <span style="width: 16px; height: 16px; border-radius: 5px; border: 2px solid {{ t.fg }};"></span>
+                </div>
+                <span style="font-size: 12px; font-weight: 500; color: {{ t.fg }};">{{ t.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </x-import>
+      <span style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.5; text-align: center;">Devices</span>
+    </div>
+
+    <!-- 4. SETTINGS -->
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" dark="{{ isDark }}" hint-size="428px,908px">
+        <div style="height: 100%; display: flex; flex-direction: column; background: var(--m3-surface); color: var(--m3-on-surface); font-family: Roboto, sans-serif;">
+          <div style="padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 4px;">
+            <span style="font-size: 22px;">Settings</span>
+          </div>
+
+          <div style="flex: 1; overflow: hidden; padding: 0 16px 12px; display: flex; flex-direction: column; gap: 18px;">
+            <sc-for list="{{ settingGroups }}" as="g" hint-placeholder-count="3">
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <span style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--m3-primary); padding: 0 4px;">{{ g.title }}</span>
+                <div style="border-radius: 24px; background: var(--m3-surface-c); overflow: hidden;">
+                  <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="3">
+                    <div style="display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-top: 1px solid var(--m3-surface-ch);">
+                      <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+                        <span style="font-size: 15px;">{{ r.label }}</span>
+                        <span style="font-size: 12.5px; color: var(--m3-on-surface-var); line-height: 1.4;">{{ r.hint }}</span>
+                      </div>
+                      <div onClick="{{ r.go }}" style="width: 52px; height: 32px; border-radius: 99px; box-sizing: border-box; cursor: pointer; padding: 4px; display: flex; align-items: center; border: 2px solid {{ r.sw.border }}; background: {{ r.sw.track }}; justify-content: {{ r.sw.justify }};">
+                        <div style="border-radius: 99px; background: {{ r.sw.thumb }}; width: {{ r.sw.size }}; height: {{ r.sw.size }};"></div>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-for>
+
+            <div style="border-radius: 24px; padding: 16px 18px; background: var(--m3-surface-c); display: flex; flex-direction: column; gap: 10px;">
+              <span style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--m3-on-surface-var);">Battery this session</span>
+              <div style="display: flex; align-items: flex-end; gap: 8px;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 26px;">4.2%</span>
+                <span style="font-size: 12.5px; color: var(--m3-on-surface-var); padding-bottom: 5px;">/ 14 min · hardware encoder</span>
+              </div>
+              <div style="height: 6px; border-radius: 99px; background: var(--m3-surface-chh); overflow: hidden;">
+                <div style="height: 100%; width: 22%; border-radius: 99px; background: var(--m3-primary);"></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="height: 78px; display: flex; align-items: flex-start; padding-top: 12px; background: var(--m3-surface-c);">
+            <sc-for list="{{ tabsSettings }}" as="t" hint-placeholder-count="3">
+              <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                <div style="width: 62px; height: 32px; border-radius: 99px; display: grid; place-items: center; background: {{ t.pill }};">
+                  <span style="width: 16px; height: 16px; border-radius: 5px; border: 2px solid {{ t.fg }};"></span>
+                </div>
+                <span style="font-size: 12px; font-weight: 500; color: {{ t.fg }};">{{ t.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </x-import>
+      <span style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.5; text-align: center;">Settings</span>
+    </div>
+  </div>
+</div></template>
+  <script>
+class DCLogic {
+  constructor(props = {}) { this.props = props; }
+  setState(patch) {
+    this.state = { ...this.state, ...(typeof patch === 'function' ? patch(this.state) : patch) };
+    window.__dcRender();
+  }
+}
+
+const React = {
+  createRef() { return { current: null }; },
+  createElement(tag, props, ...children) {
+    const node = document.createElement(tag);
+    const options = props || {};
+    for (const [key, value] of Object.entries(options)) {
+      if (key === 'key' || value == null) continue;
+      if (key === 'style' && typeof value === 'object') {
+        for (const [property, setting] of Object.entries(value)) {
+          node.style[property] = typeof setting === 'number' && setting !== 0 ? setting + 'px' : setting;
+        }
+      }
+      else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2).toLowerCase(), value);
+      else node.setAttribute(key, value);
+    }
+    for (const child of children.flat(Infinity)) {
+      if (child == null || child === false) continue;
+      node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+    }
+    return node;
+  }
+};
+
+class Component extends DCLogic {
+  state = {
+    theme: null, cam: true, mic: true, spk: false, flash: false,
+    res: '1080p', fps: '60', lens: 'Rear', vol: 48,
+    ping: 12, mbps: 8.4, loss: 0.2,
+    ns: true, autoConnect: true, keepScreen: false, hwEnc: true, dnd: true, batterySaver: false
+  };
+
+  componentDidMount() {
+    this.t = setInterval(() => this.setState({
+      ping: 9 + Math.round(Math.random() * 8),
+      mbps: +(6.5 + Math.random() * 3.2).toFixed(1),
+      loss: +(Math.random() * 0.5).toFixed(2)
+    }), 1500);
+  }
+  componentWillUnmount() { clearInterval(this.t); }
+
+  theme() { return this.state.theme ?? this.props.theme ?? 'dark'; }
+
+  sw(on) {
+    return on
+      ? { track: 'var(--m3-primary)', border: 'var(--m3-primary)', thumb: 'var(--m3-on-primary)', size: '24px', justify: 'flex-end' }
+      : { track: 'var(--m3-surface-chh)', border: 'var(--m3-outline)', thumb: 'var(--m3-outline)', size: '16px', justify: 'flex-start' };
+  }
+
+  chip(label, on, go) {
+    return { label, go, border: on ? 'transparent' : 'var(--m3-outline)', bg: on ? 'var(--m3-secondary-c)' : 'transparent', fg: on ? 'var(--m3-on-secondary-c)' : 'var(--m3-on-surface-var)' };
+  }
+
+  vu(active) {
+    const bars = [];
+    for (let i = 0; i < 38; i++) {
+      const h = active ? 8 + ((i * 31) % 22) : 3;
+      bars.push(React.createElement('div', {
+        key: i,
+        style: {
+          width: 3, flex: '0 0 3px', borderRadius: 2, height: h + 'px',
+          background: 'var(--m3-primary)', opacity: active ? 0.9 : 0.35, transformOrigin: 'center',
+          animation: active ? `vu ${(560 + (i * 47) % 480)}ms ease-in-out ${(i * 37) % 280}ms infinite` : 'none'
+        }
+      }));
+    }
+    return React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 3, height: 28 } }, bars);
+  }
+
+  tabs(active) {
+    return ['Home', 'Devices', 'Settings'].map(label => ({
+      label,
+      pill: label === active ? 'var(--m3-secondary-c)' : 'transparent',
+      fg: label === active ? 'var(--m3-on-secondary-c)' : 'var(--m3-on-surface-var)'
+    }));
+  }
+
+  renderVals() {
+    const s = this.state, dark = this.theme() === 'dark';
+    const set = (k, v) => () => this.setState({ [k]: v });
+    const tgl = k => () => this.setState({ [k]: !s[k] });
+    const anyOn = s.cam || s.mic || s.spk;
+    const on = (a, b) => ({ iconBg: a ? 'var(--m3-primary-c)' : 'var(--m3-surface-ch)', iconFg: a ? 'var(--m3-on-primary-c)' : 'var(--m3-on-surface-var)' })[b];
+
+    return {
+      theme: this.theme(), isDark: dark,
+      themeLabel: dark ? 'Dark theme' : 'Light theme',
+      toggleTheme: () => this.setState({ theme: dark ? 'light' : 'dark' }),
+
+      ping: s.ping, mbps: s.mbps.toFixed(1), loss: s.loss.toFixed(2),
+
+      camSw: this.sw(s.cam), micSw: this.sw(s.mic), spkSw: this.sw(s.spk),
+      toggleCam: tgl('cam'), toggleMic: tgl('mic'), toggleSpk: tgl('spk'), toggleFlash: tgl('flash'),
+      camIconBg: on(s.cam, 'iconBg'), camIconFg: on(s.cam, 'iconFg'),
+      micIconBg: on(s.mic, 'iconBg'), micIconFg: on(s.mic, 'iconFg'),
+      spkIconBg: on(s.spk, 'iconBg'), spkIconFg: on(s.spk, 'iconFg'),
+      camLine: s.cam ? s.res + ' · ' + s.fps + ' fps · ' + s.lens.toLowerCase() + ' lens' : 'Off · tap to stream to PC',
+      micLine: s.mic ? 'Opus 48 kHz · noise suppression on' : 'Off · PC uses its own mic',
+      spkLine: s.spk ? 'Playing PC system audio' : 'Off · PC audio stays on PC',
+
+      camChips: [
+        this.chip('1080p', s.res === '1080p', set('res', '1080p')),
+        this.chip('60 fps', s.fps === '60', set('fps', '60')),
+        this.chip(s.lens + ' lens', true, () => this.setState({ lens: s.lens === 'Rear' ? 'Front' : 'Rear' }))
+      ].map(c => ({ ...c })),
+
+      micVu: this.vu(s.mic),
+      vol: s.vol, volPct: s.vol + '%',
+
+      fabLabel: anyOn ? 'Stop streaming' : 'Start streaming',
+      toggleAll: () => this.setState({ cam: !anyOn, mic: !anyOn, spk: !anyOn }),
+      tabs: this.tabs('Home'), tabsDevices: this.tabs('Devices'), tabsSettings: this.tabs('Settings'),
+
+      camOverlayChips: [
+        { label: s.res, bg: 'rgba(0,0,0,0.45)', fg: '#fff', go: set('res', s.res === '1080p' ? '720p' : '1080p') },
+        { label: s.fps + ' fps', bg: 'rgba(0,0,0,0.45)', fg: '#fff', go: set('fps', s.fps === '60' ? '30' : '60') },
+        { label: s.lens, bg: 'rgba(0,0,0,0.45)', fg: '#fff', go: () => this.setState({ lens: s.lens === 'Rear' ? 'Front' : 'Rear' }) },
+        { label: s.flash ? 'Flash on' : 'Flash off', bg: s.flash ? 'var(--m3-primary)' : 'rgba(0,0,0,0.45)', fg: s.flash ? 'var(--m3-on-primary)' : '#fff', go: tgl('flash') }
+      ],
+      camBtnBg: s.cam ? 'var(--m3-error)' : 'var(--m3-primary)',
+      camBtnFg: s.cam ? (dark ? '#3a0906' : '#ffffff') : 'var(--m3-on-primary)',
+      camBtnLabel: s.cam ? 'Stop camera' : 'Start camera',
+      camBtnShape: s.cam ? '3px' : '99px',
+      flashBg: s.flash ? 'var(--m3-primary-c)' : 'var(--m3-surface-c)',
+      flashFg: s.flash ? 'var(--m3-on-primary-c)' : 'var(--m3-on-surface-var)',
+      camLatency: s.fps === '60' ? 38 : 47,
+      fps: s.fps,
+      resSeg: ['720p', '1080p', '1440p'].map(r => ({
+        label: r, go: set('res', r),
+        bg: s.res === r ? 'var(--m3-secondary-c)' : 'transparent',
+        fg: s.res === r ? 'var(--m3-on-secondary-c)' : 'var(--m3-on-surface-var)'
+      })),
+      fpsSeg: ['24', '30', '60'].map(f => ({
+        label: f + ' fps', go: set('fps', f),
+        bg: s.fps === f ? 'var(--m3-primary-c)' : 'var(--m3-surface-c)',
+        fg: s.fps === f ? 'var(--m3-on-primary-c)' : 'var(--m3-on-surface-var)'
+      })),
+
+      hosts: [
+        { name: 'arch-desktop', meta: '192.168.1.10 · linux · paired', action: 'Connected', bg: 'var(--m3-primary-c)', fg: 'var(--m3-on-primary-c)', iconBg: 'var(--m3-surface)', iconFg: 'var(--m3-primary)', btnBg: 'var(--m3-surface)', btnFg: 'var(--m3-primary)' },
+        { name: 'DESKTOP-K7', meta: '192.168.1.31 · windows 11', action: 'Connect', bg: 'var(--m3-surface-c)', fg: 'var(--m3-on-surface)', iconBg: 'var(--m3-surface-ch)', iconFg: 'var(--m3-on-surface-var)', btnBg: 'var(--m3-primary)', btnFg: 'var(--m3-on-primary)' },
+        { name: 'studio-mini', meta: '192.168.1.44 · linux · last seen 2d', action: 'Connect', bg: 'var(--m3-surface-c)', fg: 'var(--m3-on-surface)', iconBg: 'var(--m3-surface-ch)', iconFg: 'var(--m3-on-surface-var)', btnBg: 'var(--m3-primary)', btnFg: 'var(--m3-on-primary)' }
+      ],
+
+      settingGroups: [
+        { title: 'Streaming', rows: [
+          { label: 'Noise suppression', hint: 'RNNoise on-device before Opus encode', sw: this.sw(s.ns), go: tgl('ns') },
+          { label: 'Hardware encoder', hint: 'MediaCodec H.264 · cooler, less battery', sw: this.sw(s.hwEnc), go: tgl('hwEnc') },
+          { label: 'Battery saver', hint: 'Cap at 720p / 30 fps below 20%', sw: this.sw(s.batterySaver), go: tgl('batterySaver') }
+        ] },
+        { title: 'Connection', rows: [
+          { label: 'Auto-connect on Wi-Fi', hint: 'Reconnect to arch-desktop at home', sw: this.sw(s.autoConnect), go: tgl('autoConnect') },
+          { label: 'Keep screen on', hint: 'Prevent sleep while streaming', sw: this.sw(s.keepScreen), go: tgl('keepScreen') },
+          { label: 'Mute phone alerts', hint: 'Silence notifications during a session', sw: this.sw(s.dnd), go: tgl('dnd') }
+        ] }
+      ]
+    };
+  }
+}
+
+const dcTemplate = document.querySelector('#dc-template');
+const dcRoot = document.querySelector('#app');
+const dcComponent = new Component({"theme":"dark"});
+dcComponent.props = {"theme":"dark"};
+
+function valueAt(scope, path) {
+  const clean = String(path).trim();
+  if (clean === 'true') return true;
+  if (clean === 'false') return false;
+  if (clean === 'null') return null;
+  return clean.split('.').reduce((value, key) => value == null ? undefined : value[key], scope);
+}
+
+function exactBinding(text) {
+  const match = String(text).match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
+  return match ? match[1] : null;
+}
+
+function interpolate(text, scope) {
+  return String(text).replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, path) => {
+    const value = valueAt(scope, path);
+    return value == null || typeof value === 'object' || typeof value === 'function' ? '' : String(value);
+  });
+}
+
+function expandDirectives(container, scope) {
+  let directive;
+  while ((directive = container.querySelector('sc-for, sc-if'))) {
+    if (directive.localName === 'sc-for') {
+      const list = valueAt(scope, exactBinding(directive.getAttribute('list')) || directive.getAttribute('list')) || [];
+      const alias = directive.getAttribute('as') || 'item';
+      const fragment = document.createDocumentFragment();
+      for (const item of list) {
+        const holder = document.createElement('template');
+        holder.innerHTML = directive.innerHTML;
+        expandDirectives(holder.content, { ...scope, [alias]: item });
+        bindTree(holder.content, { ...scope, [alias]: item });
+        fragment.append(holder.content);
+      }
+      directive.replaceWith(fragment);
+    } else {
+      const raw = directive.getAttribute('value');
+      const enabled = valueAt(scope, exactBinding(raw) || raw);
+      if (enabled) {
+        const fragment = document.createDocumentFragment();
+        while (directive.firstChild) fragment.append(directive.firstChild);
+        directive.replaceWith(fragment);
+      } else directive.remove();
+    }
+  }
+}
+
+function bindTree(container, scope) {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const binding = exactBinding(node.nodeValue);
+      if (binding) {
+        const value = valueAt(scope, binding);
+        if (value instanceof Node) node.replaceWith(value);
+        else node.nodeValue = value == null ? '' : String(value);
+      } else node.nodeValue = interpolate(node.nodeValue, scope);
+      continue;
+    }
+    for (const attribute of [...node.attributes]) {
+      const binding = exactBinding(attribute.value);
+      const value = binding ? valueAt(scope, binding) : undefined;
+      if (attribute.name === 'ref' && value && typeof value === 'object' && 'current' in value) {
+        value.current = node;
+        node.removeAttribute(attribute.name);
+      } else if (attribute.name.startsWith('on') && typeof value === 'function') {
+        node.removeAttribute(attribute.name);
+        node.addEventListener(attribute.name.slice(2), value);
+      } else {
+        node.setAttribute(attribute.name, binding && value != null && typeof value !== 'object' && typeof value !== 'function'
+          ? String(value)
+          : interpolate(attribute.value, scope));
+      }
+    }
+  }
+}
+
+window.__dcRender = () => {
+  const oldScroll = [...dcRoot.querySelectorAll('*')].map(node => [node.scrollTop, node.scrollLeft]);
+  const scope = dcComponent.renderVals();
+  const fragment = dcTemplate.content.cloneNode(true);
+  expandDirectives(fragment, scope);
+  bindTree(fragment, scope);
+  dcRoot.replaceChildren(fragment);
+  [...dcRoot.querySelectorAll('*')].forEach((node, index) => {
+    if (oldScroll[index]) [node.scrollTop, node.scrollLeft] = oldScroll[index];
+  });
+  dcComponent.componentDidUpdate?.();
+};
+
+window.__dcRender();
+dcComponent.componentDidMount?.();
+window.addEventListener('beforeunload', () => dcComponent.componentWillUnmount?.());
+</script>
+</body>
+</html>
