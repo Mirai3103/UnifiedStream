@@ -53,5 +53,5 @@
 
 - [x] 8.1 Run `openspec validate --all`, Rust formatting/Clippy/workspace tests, Android debug unit tests and APK assembly, and the frozen-lockfile frontend production build required by `CONTRIBUTING.md`.
 - [ ] 8.2 Reconcile the implementation and verification results with the `application-interface` delta spec, then sync the delta to main specs and archive this completed change on the same feature branch.
-- [ ] 8.3 Push the feature branch and open or update its pull request targeting `main`, documenting visual comparisons, manual verification, dependencies, intentional reference deviations, and every local check run.
+- [x] 8.3 Push the feature branch and open or update its pull request targeting `main`, documenting visual comparisons, manual verification, dependencies, intentional reference deviations, and every local check run.
 - [ ] 8.4 Confirm the required `openspec`, `rust`, `android`, and `frontend` pull-request checks pass before merge; after merge, monitor the `main` workflow and confirm the same required jobs pass.
