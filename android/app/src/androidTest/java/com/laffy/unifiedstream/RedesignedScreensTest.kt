@@ -1,10 +1,13 @@
 package com.laffy.unifiedstream
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import com.laffy.unifiedstream.discovery.DiscoveryState
 import com.laffy.unifiedstream.session.ConnectionState
 import com.laffy.unifiedstream.ui.CameraControls
@@ -39,8 +42,14 @@ class RedesignedScreensTest {
         }
 
         compose.onNodeWithText("Camera").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithContentDescription("Open settings").performClick()
+        compose.onNodeWithContentDescription("Back")
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        compose.onNodeWithContentDescription("Open settings")
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
         compose.runOnIdle {
             assertEquals(true, backPressed)
             assertEquals(true, settingsPressed)

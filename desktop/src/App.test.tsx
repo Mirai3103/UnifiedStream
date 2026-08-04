@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { EVENTS, type StatusSnapshot } from "./types";
@@ -55,7 +55,7 @@ describe("desktop application shell", () => {
     await screen.findByText("Media bridge");
     mocks.invoke.mockClear();
 
-    fireEvent.click(screen.getByRole("button", { name: "Network" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Network" }));
     expect(screen.getByText("Connection & diagnostics")).toBeInTheDocument();
     expect(mocks.invoke).not.toHaveBeenCalled();
   });
@@ -63,7 +63,7 @@ describe("desktop application shell", () => {
   it("switches theme without losing the selected destination", async () => {
     render(<App />);
     await screen.findByText("Media bridge");
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Settings" }));
     fireEvent.click(screen.getByRole("radio", { name: /Light/ }));
 
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
@@ -73,7 +73,7 @@ describe("desktop application shell", () => {
   it("keeps pairing actionable from a non-default destination", async () => {
     render(<App />);
     await waitFor(() => expect(mocks.listeners.has(EVENTS.pairingRequest)).toBe(true));
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Settings" }));
 
     mocks.listeners.get(EVENTS.pairingRequest)?.({ payload: { device_id: "phone-123456", device_name: "Phone" } });
     expect(await screen.findByRole("dialog", { name: "Pairing request" })).toBeInTheDocument();

@@ -11,6 +11,8 @@
 - [x] 2.2 Implement semantic desktop light/dark tokens, Space Grotesk and JetBrains Mono typography roles, glass surfaces, borders, status colors, control states, spacing, focus styles, and reduced-motion behavior from `design/Desktop.DESIGN.md`.
 - [x] 2.3 Make desktop web content fill the Tauri webview without simulated title-bar or outer-window mock decoration, and build sidebar navigation with explicit selected state, keyboard operation, device/backend context, theme control, and compact/drawer behavior at narrow widths.
 - [x] 2.4 Implement responsive desktop layout primitives for the wide four-column telemetry strip, primary media workspace, two-column secondary views, stacked narrow layouts, and camera-preview reflow without reducing required control sizes.
+- [x] 2.5 Replace the desktop bundle icon set from a retained vector master with an optically larger UnifiedStream mark at all required Tauri platform sizes.
+- [x] 2.6 Replace desktop Unicode/action glyphs with accessible Lucide React icons and keep labels on the owning controls.
 
 ## 3. Desktop Views and Behavior Parity
 
@@ -26,6 +28,7 @@
 - [x] 4.2 Extract reusable Compose components for app bars, device/session summaries, stream cards, metric values, level meters, switches, segmented choices, notices, search/manual-entry fields, and loading/error/permission states with accessibility semantics.
 - [x] 4.3 Replace Android bottom navigation with a stack-based Devices → Home → Camera flow and a consistent title bar exposing Back and Settings on every screen, preserving history, system insets, screen state, and top-level ViewModel collection.
 - [x] 4.4 Ensure Android screens scroll and reflow for supported small screens, orientation/inset changes, and enlarged text without clipped actions, obscured final content, distorted preview, or undersized touch targets.
+- [x] 4.5 Replace Android template launcher assets with matching adaptive, monochrome, round, and legacy UnifiedStream artwork; render title Back/Settings as accessible 48-dp Material icon buttons below the status-bar inset.
 
 ## 5. Android Destinations and Behavior Parity
 
@@ -41,6 +44,7 @@
 - [x] 6.2 Add Android Compose/UI tests for title-bar Back/Settings semantics, Devices → Home → Camera navigation, Settings return behavior, all four screens, discovery/manual-entry states, camera controls, microphone and speaker controls, permission/refusal/error states, and connection-state continuity across navigation.
 - [x] 6.3 Add focused responsive checks for wide and narrow desktop layouts and Android checks with enlarged text, ensuring all controls remain reachable and content is not hidden.
 - [x] 6.4 Verify accessible names, roles, selected/checked/enabled states, visible desktop focus, non-color status cues, minimum targets, and reduced-motion behavior on both clients.
+- [x] 6.5 Add focused checks for icon-button semantics/system-inset behavior and verify required desktop and Android launcher icon outputs are generated from the updated mark.
 
 ## 7. Visual and End-to-End Verification
 

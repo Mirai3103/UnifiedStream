@@ -39,7 +39,11 @@ The redesign SHALL organize content into explicit platform-appropriate destinati
 
 #### Scenario: Android title navigation
 - **WHEN** any Android screen is displayed
-- **THEN** its title bar exposes Back and Settings actions, Settings opens above the current screen, and Back restores the previous screen or exits normally from the root Devices screen
+- **THEN** its title bar exposes icon-based Back and Settings actions with meaningful accessible labels and minimum 48-dp targets, Settings opens above the current screen, and Back restores the previous screen or exits normally from the root Devices screen
+
+#### Scenario: Android title bar avoids system controls
+- **WHEN** edge-to-edge content renders on a device with a status-bar inset
+- **THEN** the title-bar controls are laid out below that inset and remain fully visible and operable
 
 #### Scenario: Desktop workspace navigation
 - **WHEN** the user navigates among the desktop workspace, network, and settings views
@@ -119,3 +123,14 @@ Motion SHALL communicate live or transitional state, SHALL NOT be required to un
 #### Scenario: Reduced motion
 - **WHEN** the operating system or browser requests reduced motion or disables animations
 - **THEN** nonessential movement stops and the same state remains understandable through static visual and textual cues
+
+### Requirement: Platform launcher identity
+The desktop and Android packages SHALL use a cohesive UnifiedStream launcher mark that remains recognizable at required platform sizes and uses the available safe area without excessive empty padding.
+
+#### Scenario: Desktop bundle icon
+- **WHEN** a supported desktop bundle or window icon is rendered
+- **THEN** it uses the UnifiedStream mark at an optically legible scale rather than a placeholder or undersized symbol
+
+#### Scenario: Android launcher icon
+- **WHEN** Android renders the adaptive, round, monochrome, or legacy launcher icon
+- **THEN** it uses the UnifiedStream mark within platform mask and safe-zone constraints rather than the Android project-template icon

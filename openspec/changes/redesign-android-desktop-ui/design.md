@@ -43,7 +43,11 @@ Creating new backend commands or duplicating backend state in per-screen stores 
 
 Desktop receives CSS custom properties for the documented dark/light roles, reusable glass panels, status lights, switches, telemetry values, audio meters, navigation rows, and responsive grids. Space Grotesk is the primary family and JetBrains Mono is used for technical values, with deterministic fallbacks when fonts cannot load.
 
+Desktop interface actions use Lucide React icons instead of hand-drawn glyphs or Unicode approximations. Icons inherit semantic color and stroke sizing from their component, while the surrounding button or navigation item owns the accessible name.
+
 Android receives Material 3 light/dark color schemes, typography roles, tonal containers, stream cards, metric readouts, status rows, switches, segmented choices, and a consistent title bar with Back and Settings actions. Roboto remains the platform primary family and JetBrains Mono is used selectively for measurements.
+
+Back and Settings use standard Compose Material Icons rather than text actions or custom paths. Each retains a semantic label and at least a 48-dp touch target. The app bar consumes the status-bar inset so controls never occupy the system status region when edge-to-edge drawing is enabled.
 
 The platforms share status semantics—active/connected, secondary telemetry, warning, destructive/error—but do not share source components or force identical geometry. A cross-platform UI toolkit was rejected because it would add migration risk and weaken each reference design's platform character.
 
@@ -68,6 +72,10 @@ Animation is limited to state communication: connection pulse, discovery/recordi
 Desktop tests cover destination changes, command invocation, event-driven state rendering, pairing availability, disconnected metric clearing, and responsive navigation behavior where practical. Android UI tests cover title-bar Back/Settings actions, the Devices → Home → Camera navigation flow, Settings return behavior, stream actions, discovery/manual-entry states, permission and error states, and semantic labels. Theme/token tests or focused snapshots may protect stable visual roles without relying on brittle full-page pixel snapshots.
 
 Final verification runs all commands required by `CONTRIBUTING.md` and performs manual comparison against both light and dark reference examples at representative desktop and Android sizes.
+
+### 8. Use one optically sized cross-platform launcher mark
+
+Desktop bundle icons and Android adaptive/legacy launcher icons use the same compact UnifiedStream stream/camera mark and palette. The Android foreground stays inside the adaptive-icon safe zone while making fuller use of it than the template artwork; desktop exports use a platform-appropriate rounded-square composition with minimal transparent padding. A vector master is retained so generated raster sizes remain consistent.
 
 ## Risks / Trade-offs
 

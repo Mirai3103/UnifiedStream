@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { LayoutDashboard, Moon, Network, Settings, Sun, X, type LucideIcon } from "lucide-react";
 import "@fontsource/space-grotesk/400.css";
 import "@fontsource/space-grotesk/500.css";
 import "@fontsource/space-grotesk/600.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/600.css";
+import appIconUrl from "../src-tauri/icons/icon.svg";
 import "./App.css";
 import {
   type AudioLevel,
@@ -26,6 +28,12 @@ import {
 
 type View = "workspace" | "network" | "settings";
 type Theme = "dark" | "light";
+
+const NAV_ITEMS: { view: View; label: string; icon: LucideIcon }[] = [
+  { view: "workspace", label: "Workspace", icon: LayoutDashboard },
+  { view: "network", label: "Network", icon: Network },
+  { view: "settings", label: "Settings", icon: Settings },
+];
 
 const IDLE_SPEAKER: SpeakerStatus = {
   active: false,
@@ -260,12 +268,12 @@ function App() {
   return (
     <main className="app-layout">
           <aside className="sidebar">
-            <div className="brand-mark" aria-label="UnifiedStream home">US</div>
+            <div className="brand-mark" aria-label="UnifiedStream home"><img src={appIconUrl} alt="" /></div>
             <nav aria-label="Primary navigation">
-              {(["workspace", "network", "settings"] as View[]).map((item) => (
+              {NAV_ITEMS.map(({ view: item, label, icon: NavIcon }) => (
                 <button key={item} className={`nav-item ${view === item ? "is-selected" : ""}`} aria-current={view === item ? "page" : undefined} onClick={() => setView(item)}>
-                  <span className="nav-icon" aria-hidden="true">{item === "workspace" ? "◆" : item === "network" ? "⌁" : "⚙"}</span>
-                  {item[0].toUpperCase() + item.slice(1)}
+                  <NavIcon className="nav-icon" size={18} strokeWidth={1.8} aria-hidden="true" />
+                  {label}
                 </button>
               ))}
             </nav>
@@ -279,8 +287,8 @@ function App() {
 
           <div className="content-column">
             <div className="compact-nav" role="navigation" aria-label="Compact navigation">
-              {(["workspace", "network", "settings"] as View[]).map((item) => (
-                <button key={item} aria-pressed={view === item} onClick={() => setView(item)}>{item}</button>
+              {NAV_ITEMS.map(({ view: item, label, icon: NavIcon }) => (
+                <button key={item} aria-pressed={view === item} onClick={() => setView(item)}><NavIcon size={17} strokeWidth={1.8} aria-hidden="true" />{label}</button>
               ))}
             </div>
 
@@ -288,7 +296,7 @@ function App() {
               <div className="global-notice is-error" role="alert">
                 <strong>Action required</strong>
                 <span>{error ?? (state.state === "failed" ? describeFailure(state.reason) : "")}</span>
-                {error && <button className="icon-button" aria-label="Dismiss error" onClick={() => setError(null)}>×</button>}
+                {error && <button className="icon-button" aria-label="Dismiss error" onClick={() => setError(null)}><X size={18} aria-hidden="true" /></button>}
               </div>
             )}
             {pairing && (
@@ -367,7 +375,7 @@ function App() {
               <div className="view-stack settings-view">
                 <div className="title-row"><div><span className="eyebrow">Settings</span><h1>Appearance</h1><p>Presentation preferences stay local and never affect an active stream.</p></div></div>
                 <Panel title="Theme" eyebrow="Interface">
-                  <div className="theme-options" role="radiogroup" aria-label="Theme"><button role="radio" aria-checked={theme === "dark"} className={theme === "dark" ? "is-selected" : ""} onClick={() => setTheme("dark")}><span className="theme-swatch dark-swatch" />Dark</button><button role="radio" aria-checked={theme === "light"} className={theme === "light" ? "is-selected" : ""} onClick={() => setTheme("light")}><span className="theme-swatch light-swatch" />Light</button></div>
+                  <div className="theme-options" role="radiogroup" aria-label="Theme"><button role="radio" aria-checked={theme === "dark"} className={theme === "dark" ? "is-selected" : ""} onClick={() => setTheme("dark")}><span className="theme-swatch dark-swatch"><Moon size={16} aria-hidden="true" /></span>Dark</button><button role="radio" aria-checked={theme === "light"} className={theme === "light" ? "is-selected" : ""} onClick={() => setTheme("light")}><span className="theme-swatch light-swatch"><Sun size={16} aria-hidden="true" /></span>Light</button></div>
                 </Panel>
                 <Panel title="Runtime contract" eyebrow="About"><p className="body-copy">The redesign uses the existing discovery, session, media, and telemetry backend. Illustrative design controls without runtime support are intentionally not interactive.</p><dl className="detail-grid"><div><dt>Version</dt><dd className="mono">0.1.0</dd></div><div><dt>Desktop backend</dt><dd>PipeWire · v4l2loopback</dd></div><div><dt>Protocol</dt><dd>Trusted LAN</dd></div></dl></Panel>
               </div>

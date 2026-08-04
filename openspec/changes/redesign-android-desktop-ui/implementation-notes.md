@@ -41,21 +41,25 @@ Desktop bundles `@fontsource/space-grotesk` and `@fontsource/jetbrains-mono` fro
 
 Android uses the platform-bundled Roboto family and platform monospace through Compose, avoiding a downloadable-font runtime dependency. The monospace role is isolated so a bundled JetBrains Mono resource can replace it later without changing component APIs. No remote font request is made at runtime.
 
+Desktop action/navigation glyphs come from the pinned `lucide-react` package; Android title actions use Compose Material Icons. The UnifiedStream launcher identity remains custom rather than borrowing a generic library glyph: `desktop/src-tauri/icons/icon.svg` is the retained U-plus-Play vector master, with Tauri bundle exports plus matching Android adaptive, monochrome, round, and legacy resources. The larger optical footprint replaces the Android template artwork and the previous undersized desktop mark.
+
 ## Intentional reference adaptations
 
 - HTML presentation boards and fake device frames are documentation only.
 - Following design clarification, the desktop runtime fills the Tauri webview and explicitly excludes the example's simulated title bar, traffic-light controls, fixed rounded outer frame, presentation border/shadow, and surrounding canvas.
 - Real backend states, errors, ports, capabilities, and controls replace illustrative values.
 - Layout geometry reflows when needed for keyboard access, font scaling, system insets, and minimum targets.
+- Android title actions use icon buttons with 48-dp minimum targets, and Material `TopAppBar` consumes the status-bar inset while edge-to-edge drawing remains enabled.
 
 ## Automated verification
 
 - `openspec validate --all`: 10 items passed.
-- Desktop frozen install, five Vitest integration tests, TypeScript compilation, and Vite production build passed.
+- Desktop frozen install, six Vitest integration tests, TypeScript compilation, and Vite production build passed.
 - Android JVM unit tests, debug APK assembly, and Compose instrumentation-test APK compilation passed.
 - Rust formatting, warning-denied Clippy, and all workspace tests passed (263 tests across unit and integration targets).
 - Desktop responsive rules cover full-webview wide, compact-navigation, two-column, stacked, and single-column breakpoints; controls use visible `:focus-visible` styling and reduced-motion CSS.
-- Android screens use scrolling content, scaffold/title-bar insets, Material minimum targets, explicit Back/Settings and control semantics, non-color state text, and system-aware Compose animation.
+- Android screens use scrolling content, scaffold/title-bar insets, Material minimum targets, explicit Back/Settings icon semantics, non-color state text, and system-aware Compose animation. The title-action test also enforces 48-dp minimum dimensions.
+- Desktop 32/128/256/512 PNG, Windows ICO, macOS ICNS, Windows Store sizes, and Android mdpi through xxxhdpi legacy/round resources were regenerated and dimension-checked; adaptive and monochrome Android vectors are packaged by the debug builds.
 
 ## Manual verification still required
 
