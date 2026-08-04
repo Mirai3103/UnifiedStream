@@ -1,0 +1,113 @@
+## ADDED Requirements
+
+### Requirement: Reference-driven platform presentation
+The Android and desktop clients SHALL implement the visual roles, typography hierarchy, component language, and layout character defined by their respective Markdown and HTML references in `design/`, while using native Compose and React/Tauri components rather than shipping the presentation-board examples.
+
+#### Scenario: Desktop renders the streaming-console design
+- **WHEN** the desktop client opens at a supported wide window size
+- **THEN** it presents the documented window chrome, navigation sidebar, telemetry hierarchy, glass-panel workspace, and media controls using the desktop color and typography roles
+
+#### Scenario: Android renders the Material companion design
+- **WHEN** the Android client opens on a supported phone
+- **THEN** it presents the documented Material 3 tonal surfaces, rounded control groups, stable bottom navigation, stream cards, and mobile typography roles
+
+#### Scenario: Presentation-board decoration is excluded
+- **WHEN** either shipped client renders its interface
+- **THEN** documentation-only device frames, board labels, and surrounding prototype canvas are not rendered as application content
+
+### Requirement: Light and dark themes
+Both clients SHALL provide complete light and dark presentations using the semantic roles in their platform reference, and all text, controls, status indicators, previews, and telemetry values MUST remain legible and operable in both themes.
+
+#### Scenario: Theme changes without losing state
+- **WHEN** the user switches between light and dark themes during an active connection
+- **THEN** the interface updates its visual tokens without disconnecting, stopping streams, resetting navigation, or clearing live state
+
+#### Scenario: Status is not color-only
+- **WHEN** a connected, active, warning, recording, or failed state is displayed in either theme
+- **THEN** color is paired with text, iconography, shape, or another non-color cue identifying the state
+
+### Requirement: Stable platform navigation
+The redesign SHALL organize content into explicit platform-appropriate destinations while retaining connection and stream state independently from navigation.
+
+#### Scenario: Android top-level destinations
+- **WHEN** the user navigates among Home, Camera, Devices, and Settings
+- **THEN** the selected destination changes while the current session, stream lifecycles, and collected ViewModel state continue unchanged
+
+#### Scenario: Desktop workspace navigation
+- **WHEN** the user navigates among the desktop workspace, network, and settings views
+- **THEN** the main content changes while Tauri event subscriptions and current backend state remain owned by the stable application shell
+
+#### Scenario: Time-sensitive global prompt
+- **WHEN** a pairing request or connection-level failure arrives on a non-default destination
+- **THEN** the interface exposes an actionable prompt or notice without requiring the user to discover a different destination first
+
+### Requirement: Existing feature parity
+The redesigned interfaces MUST retain access to every existing user action, live value, lifecycle state, permission state, failure reason, and diagnostic currently exposed for discovery, pairing, connection control, camera, microphone, speaker, telemetry, and the synthetic test stream.
+
+#### Scenario: Existing command remains reachable
+- **WHEN** an action was available before the redesign and its existing preconditions are satisfied
+- **THEN** the user can invoke the same underlying command or ViewModel callback from an appropriate destination in the redesigned interface
+
+#### Scenario: Existing state remains visible
+- **WHEN** the backend or ViewModel reports an active, pending, refused, unavailable, permission-required, reconnecting, disconnected, or failed state
+- **THEN** the redesigned interface displays that state and its available recovery action without replacing it with fabricated prototype data
+
+#### Scenario: Navigation during streaming
+- **WHEN** the user changes destination while one or more media streams are active
+- **THEN** navigation does not stop, restart, renegotiate, mute, or otherwise modify those streams
+
+### Requirement: Live information remains coherent
+The application shell SHALL render connection state, telemetry, stream levels, delivered camera rate, and alerts from the existing live data sources, and MUST prevent stale values from appearing current after their owning session or stream ends.
+
+#### Scenario: Live telemetry update
+- **WHEN** a connected client receives a telemetry update
+- **THEN** every visible representation of the affected latency, throughput, loss, jitter, or quality value updates from that same live snapshot
+
+#### Scenario: Disconnection clears session metrics
+- **WHEN** the active session disconnects
+- **THEN** live session metrics and stream-only measurements are cleared or explicitly marked unavailable while historical-looking values are not presented as current
+
+#### Scenario: Stream level becomes inactive
+- **WHEN** an audio stream stops or becomes muted according to its existing semantics
+- **THEN** its live meter and accompanying label visibly represent the inactive or zero-level state
+
+### Requirement: Responsive and adaptive layout
+The desktop client SHALL reflow from the documented wide workspace to narrower layouts, and the Android client SHALL support its supported screen sizes and content scaling without shrinking essential controls or clipping required content.
+
+#### Scenario: Narrow desktop window
+- **WHEN** the desktop window becomes too narrow for the fixed sidebar and multi-column workspace
+- **THEN** navigation becomes compact or drawer-based, telemetry uses fewer columns, media content stacks, and every existing control remains reachable
+
+#### Scenario: Scrollable Android content
+- **WHEN** an Android destination does not fit vertically because of screen size, system insets, or font scaling
+- **THEN** content scrolls while primary controls remain usable and bottom navigation does not obscure the final content
+
+#### Scenario: Camera content adapts
+- **WHEN** camera controls render at a constrained width
+- **THEN** preview, capture status, facing, resolution, and stream actions reflow without distorting the preview or reducing required touch targets
+
+### Requirement: Accessible interaction
+All redesigned interactive elements SHALL expose an accessible name and state, support the input methods expected on their platform, and preserve visible focus and minimum operable target sizes.
+
+#### Scenario: Desktop keyboard operation
+- **WHEN** a keyboard user traverses desktop navigation, buttons, switches, dialogs, and form controls
+- **THEN** focus order follows the visual hierarchy, focus remains visible, and each action can be completed without pointer input
+
+#### Scenario: Android semantic controls
+- **WHEN** Android accessibility services inspect navigation items, stream toggles, selectors, meters, and connection actions
+- **THEN** each actionable control exposes a meaningful label, role, enabled state, and selected or checked state where applicable
+
+#### Scenario: Enlarged text
+- **WHEN** the user enables supported enlarged text or display scaling
+- **THEN** labels and values reflow without hiding required actions or communicating state through truncated text alone
+
+### Requirement: State-driven restrained motion
+Motion SHALL communicate live or transitional state, SHALL NOT be required to understand or operate the interface, and SHALL respect platform reduced-motion or disabled-animation preferences.
+
+#### Scenario: Live state animation
+- **WHEN** connection, discovery, recording, switch, or audio-level state changes and animation is enabled
+- **THEN** the corresponding restrained indicator may animate without shifting surrounding controls or blocking input
+
+#### Scenario: Reduced motion
+- **WHEN** the operating system or browser requests reduced motion or disables animations
+- **THEN** nonessential movement stops and the same state remains understandable through static visual and textual cues

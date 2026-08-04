@@ -1,22 +1,31 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import "@fontsource/space-grotesk/400.css";
+import "@fontsource/space-grotesk/500.css";
+import "@fontsource/space-grotesk/600.css";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/600.css";
 import "./App.css";
 import {
-  AudioLevel,
-  CameraStats,
-  CameraStatus,
-  ConnectionState,
+  type AudioLevel,
+  type CameraStats,
+  type CameraStatus,
+  type ConnectionState,
   EVENTS,
-  MicStatus,
-  PairingRequest,
-  SpeakerStatus,
-  StatusSnapshot,
-  TelemetryTick,
-  TestStreamReport,
+  type LinkQuality,
+  type MicStatus,
+  type PairingRequest,
+  type SpeakerStatus,
+  type StatusSnapshot,
+  type TelemetryTick,
+  type TestStreamReport,
   describeFailure,
   describeState,
 } from "./types";
+
+type View = "workspace" | "network" | "settings";
+type Theme = "dark" | "light";
 
 const IDLE_SPEAKER: SpeakerStatus = {
   active: false,
@@ -35,7 +44,87 @@ const IDLE_CAMERA: CameraStatus = {
   device: null,
 };
 
+function StatusLight({ active, label }: { active: boolean; label: string }) {
+  return (
+    <span className="status-label">
+      <span className={`status-light ${active ? "is-live" : ""}`} aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+function Panel({
+  title,
+  eyebrow,
+  trailing,
+  className = "",
+  children,
+}: {
+  title: string;
+  eyebrow?: string;
+  trailing?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className={`glass-panel ${className}`}>
+      <header className="panel-heading">
+        <div>
+          {eyebrow && <span className="eyebrow">{eyebrow}</span>}
+          <h2>{title}</h2>
+        </div>
+        {trailing}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function SwitchControl({
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <label className="switch-control">
+      <span className="sr-only">{label}</span>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={onChange} />
+      <span className="switch-track" aria-hidden="true" />
+    </label>
+  );
+}
+
+function LevelMeter({ level, label, violet = false }: { level: AudioLevel; label: string; violet?: boolean }) {
+  const rms = Math.round(level.rms * 100);
+  const peak = Math.round(level.peak * 100);
+  return (
+    <div className={`level-meter ${violet ? "is-violet" : ""}`} aria-label={`${label}: ${rms}%`}>
+      <span className="level-fill" style={{ width: `${rms}%` }} />
+      <span className="level-peak" style={{ left: `${peak}%` }} />
+    </div>
+  );
+}
+
+function MetricCard({ label, value, unit, accent = "teal" }: { label: string; value: string; unit?: string; accent?: "teal" | "violet" | "amber" }) {
+  return (
+    <div className={`metric-card metric-${accent}`}>
+      <span className="eyebrow">{label}</span>
+      <div className="metric-value">
+        {value} {unit && <small>{unit}</small>}
+      </div>
+    </div>
+  );
+}
+
 function App() {
+  const [view, setView] = useState<View>("workspace");
+  const [theme, setTheme] = useState<Theme>("dark");
   const [status, setStatus] = useState<StatusSnapshot | null>(null);
   const [state, setState] = useState<ConnectionState>({ state: "idle" });
   const [telemetry, setTelemetry] = useState<TelemetryTick | null>(null);
@@ -45,22 +134,13 @@ function App() {
   const [frameBytes, setFrameBytes] = useState(4096);
   const [rateHz, setRateHz] = useState(60);
   const [error, setError] = useState<string | null>(null);
-  const [mic, setMic] = useState<MicStatus>({
-    active: false,
-    error: null,
-    params: null,
-  });
+  const [mic, setMic] = useState<MicStatus>({ active: false, error: null, params: null });
   const [micLevel, setMicLevel] = useState<AudioLevel>({ rms: 0, peak: 0 });
-  // True between asking the phone for the mic and hearing its answer.
   const [micPending, setMicPending] = useState(false);
   const [speaker, setSpeaker] = useState<SpeakerStatus>(IDLE_SPEAKER);
-  const [speakerLevel, setSpeakerLevel] = useState<AudioLevel>({
-    rms: 0,
-    peak: 0,
-  });
+  const [speakerLevel, setSpeakerLevel] = useState<AudioLevel>({ rms: 0, peak: 0 });
   const [camera, setCamera] = useState<CameraStatus>(IDLE_CAMERA);
   const [cameraStats, setCameraStats] = useState<CameraStats | null>(null);
-  // True between asking the phone for the camera and hearing its answer.
   const [cameraPending, setCameraPending] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -72,19 +152,21 @@ function App() {
       setMic(snapshot.mic);
       setSpeaker(snapshot.speaker);
       setCamera(snapshot.camera);
-    } catch (e) {
-      setError(String(e));
+    } catch (cause) {
+      setError(String(cause));
     }
   }, []);
 
   useEffect(() => {
-    void refresh();
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
 
+  useEffect(() => {
+    void refresh();
     const unlisteners = [
-      listen<ConnectionState>(EVENTS.connectionState, (event) => {
-        setState(event.payload);
-        // A dead session must not leave stale numbers on the dashboard.
-        if (event.payload.state !== "connected") {
+      listen<ConnectionState>(EVENTS.connectionState, ({ payload }) => {
+        setState(payload);
+        if (payload.state !== "connected") {
           setTelemetry(null);
           setTestReport(null);
           setTestRunning(false);
@@ -98,55 +180,39 @@ function App() {
           setCameraPending(false);
         }
       }),
-      listen<PairingRequest>(EVENTS.pairingRequest, (event) =>
-        setPairing(event.payload),
-      ),
-      listen<TelemetryTick>(EVENTS.telemetry, (event) =>
-        setTelemetry(event.payload),
-      ),
-      listen<TestStreamReport>(EVENTS.testStream, (event) =>
-        setTestReport(event.payload),
-      ),
-      listen<MicStatus>(EVENTS.micStatus, (event) => {
-        setMic(event.payload);
+      listen<PairingRequest>(EVENTS.pairingRequest, ({ payload }) => setPairing(payload)),
+      listen<TelemetryTick>(EVENTS.telemetry, ({ payload }) => setTelemetry(payload)),
+      listen<TestStreamReport>(EVENTS.testStream, ({ payload }) => setTestReport(payload)),
+      listen<MicStatus>(EVENTS.micStatus, ({ payload }) => {
+        setMic(payload);
         setMicPending(false);
-        if (!event.payload.active) setMicLevel({ rms: 0, peak: 0 });
+        if (!payload.active) setMicLevel({ rms: 0, peak: 0 });
       }),
-      listen<AudioLevel>(EVENTS.micLevel, (event) => setMicLevel(event.payload)),
-      listen<SpeakerStatus>(EVENTS.speakerStatus, (event) => {
-        setSpeaker(event.payload);
-        if (!event.payload.active) setSpeakerLevel({ rms: 0, peak: 0 });
+      listen<AudioLevel>(EVENTS.micLevel, ({ payload }) => setMicLevel(payload)),
+      listen<SpeakerStatus>(EVENTS.speakerStatus, ({ payload }) => {
+        setSpeaker(payload);
+        if (!payload.active) setSpeakerLevel({ rms: 0, peak: 0 });
       }),
-      listen<AudioLevel>(EVENTS.speakerLevel, (event) =>
-        setSpeakerLevel(event.payload),
-      ),
-      listen<CameraStatus>(EVENTS.cameraStatus, (event) => {
-        setCamera(event.payload);
+      listen<AudioLevel>(EVENTS.speakerLevel, ({ payload }) => setSpeakerLevel(payload)),
+      listen<CameraStatus>(EVENTS.cameraStatus, ({ payload }) => {
+        setCamera(payload);
         setCameraPending(false);
-        if (!event.payload.active) setCameraStats(null);
+        if (!payload.active) setCameraStats(null);
       }),
-      listen<CameraStats>(EVENTS.cameraStats, (event) =>
-        setCameraStats(event.payload),
-      ),
+      listen<CameraStats>(EVENTS.cameraStats, ({ payload }) => setCameraStats(payload)),
     ];
-
-    return () => {
-      unlisteners.forEach((p) => void p.then((un) => un()));
-    };
+    return () => unlisteners.forEach((promise) => void promise.then((unlisten) => unlisten()));
   }, [refresh]);
 
-  const run = useCallback(
-    async (command: string, args?: Record<string, unknown>) => {
-      setError(null);
-      try {
-        await invoke(command, args);
-        await refresh();
-      } catch (e) {
-        setError(String(e));
-      }
-    },
-    [refresh],
-  );
+  const run = useCallback(async (command: string, args?: Record<string, unknown>) => {
+    setError(null);
+    try {
+      await invoke(command, args);
+      await refresh();
+    } catch (cause) {
+      setError(String(cause));
+    }
+  }, [refresh]);
 
   const respondPairing = async (accept: boolean) => {
     setPairing(null);
@@ -157,12 +223,10 @@ function App() {
     if (testRunning) {
       await run("stop_test_stream");
       setTestRunning(false);
-      return;
+    } else {
+      await run("start_test_stream", { args: { rate_hz: rateHz, frame_bytes: frameBytes } });
+      setTestRunning(true);
     }
-    await run("start_test_stream", {
-      args: { rate_hz: rateHz, frame_bytes: frameBytes },
-    });
-    setTestRunning(true);
   };
 
   const toggleMic = async () => {
@@ -170,12 +234,10 @@ function App() {
     setMic((current) => ({ ...current, error: null }));
     try {
       await invoke("set_mic_enabled", { enabled: !mic.active });
-      // The answer arrives via the mic-status event; if the phone never replies,
-      // stop showing a spinner after its ack timeout would have fired.
       window.setTimeout(() => setMicPending(false), 6000);
-    } catch (e) {
+    } catch (cause) {
       setMicPending(false);
-      setError(String(e));
+      setError(String(cause));
     }
   };
 
@@ -184,431 +246,142 @@ function App() {
     setCamera((current) => ({ ...current, error: null, hint: null }));
     try {
       await invoke("set_camera_enabled", { enabled: !camera.active });
-      // The answer arrives via the camera-status event; if the phone never replies,
-      // stop showing a spinner after its ack timeout would have fired.
       window.setTimeout(() => setCameraPending(false), 6000);
-    } catch (e) {
+    } catch (cause) {
       setCameraPending(false);
-      setError(String(e));
+      setError(String(cause));
     }
   };
 
-  const toggleSpeaker = async () => {
-    await run("set_speaker_enabled", {
-      enabled: !(speaker.active || speaker.starting),
-    });
-  };
-
-  const toggleSpeakerMute = async () => {
-    await run("set_speaker_muted", { muted: !speaker.muted });
-  };
-
-  const toggleSpeakerRouting = async () => {
-    await run("set_speaker_routing", { enabled: !speaker.routed });
-  };
-
   const connected = state.state === "connected";
-  const quality = telemetry?.quality ?? "unknown";
+  const quality: LinkQuality = telemetry?.quality ?? "unknown";
+  const peerName = state.state === "connected" || state.state === "connecting" || state.state === "reconnecting" ? state.peer_name : null;
 
   return (
-    <main className="app">
-      <header className="header">
-        <div>
-          <h1>UnifiedStream</h1>
-          <p className="subtitle">
-            {status ? status.device_name : "Starting up…"}
-          </p>
-        </div>
-        <span className={`chip chip-${state.state}`}>
-          {describeState(state)}
-        </span>
-      </header>
+    <main className="desktop-stage">
+      <section className="app-window">
+        <header className="window-chrome">
+          <div className="traffic-lights" aria-hidden="true"><span /><span /><span /></div>
+          <span className="chrome-title">UnifiedStream <span className="mono">v0.1.0</span></span>
+          <StatusLight active={connected} label={connected ? "Host online" : "Waiting"} />
+        </header>
 
-      {error && (
-        <div className="glass banner banner-error" role="alert">
-          {error}
-        </div>
-      )}
-
-      {pairing && (
-        <div className="glass banner banner-pairing" role="dialog">
-          <div>
-            <strong>{pairing.device_name}</strong> wants to connect.
-            <span className="muted"> {pairing.device_id.slice(0, 8)}…</span>
-          </div>
-          <div className="row">
-            <button className="primary" onClick={() => respondPairing(true)}>
-              Allow
-            </button>
-            <button onClick={() => respondPairing(false)}>Deny</button>
-          </div>
-        </div>
-      )}
-
-      <section className="glass panel">
-        <div className="panel-head">
-          <h2>This device</h2>
-          <span className={`dot dot-${status?.advertising ? "on" : "off"}`} />
-        </div>
-
-        <dl className="grid">
-          <div>
-            <dt>Control port</dt>
-            <dd>{status?.control_port ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>Media port</dt>
-            <dd>{status?.media_port ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>Device ID</dt>
-            <dd className="mono small">
-              {status ? `${status.device_id.slice(0, 13)}…` : "—"}
-            </dd>
-          </div>
-        </dl>
-
-        <div className="row">
-          {status?.advertising ? (
-            <button onClick={() => run("stop_advertising")}>
-              Stop advertising
-            </button>
-          ) : (
-            <button className="primary" onClick={() => run("start_advertising")}>
-              Start advertising
-            </button>
-          )}
-          <button onClick={() => run("disconnect")} disabled={!connected}>
-            Disconnect
-          </button>
-          <button onClick={() => run("forget_devices")}>Forget devices</button>
-        </div>
-      </section>
-
-      <section className="glass panel">
-        <div className="panel-head">
-          <h2>Link quality</h2>
-          <span className={`quality quality-${quality}`}>{quality}</span>
-        </div>
-
-        {connected ? (
-          <dl className="grid metrics">
-            <div>
-              <dt>Ping</dt>
-              <dd>
-                {telemetry?.local.rtt_ms != null
-                  ? `${telemetry.local.rtt_ms.toFixed(1)} ms`
-                  : "—"}
-              </dd>
+        <div className="app-layout">
+          <aside className="sidebar">
+            <div className="brand-mark" aria-label="UnifiedStream home">US</div>
+            <nav aria-label="Primary navigation">
+              {(["workspace", "network", "settings"] as View[]).map((item) => (
+                <button key={item} className={`nav-item ${view === item ? "is-selected" : ""}`} aria-current={view === item ? "page" : undefined} onClick={() => setView(item)}>
+                  <span className="nav-icon" aria-hidden="true">{item === "workspace" ? "◆" : item === "network" ? "⌁" : "⚙"}</span>
+                  {item[0].toUpperCase() + item.slice(1)}
+                </button>
+              ))}
+            </nav>
+            <div className="sidebar-status">
+              <span className="eyebrow">This device</span>
+              <strong>{status?.device_name ?? "Starting…"}</strong>
+              <span className="mono muted">{status ? `${status.device_id.slice(0, 12)}…` : "—"}</span>
+              <StatusLight active={Boolean(status?.advertising)} label={status?.advertising ? "Discoverable" : "Hidden"} />
             </div>
-            <div>
-              <dt>Sent</dt>
-              <dd>{`${(telemetry?.local.tx_mbps ?? 0).toFixed(2)} Mbps`}</dd>
-            </div>
-            <div>
-              <dt>Received</dt>
-              <dd>{`${(telemetry?.local.rx_mbps ?? 0).toFixed(2)} Mbps`}</dd>
-            </div>
-            <div>
-              <dt>Packet loss</dt>
-              <dd>{`${(telemetry?.local.loss_pct ?? 0).toFixed(2)} %`}</dd>
-            </div>
-            <div>
-              <dt>Jitter</dt>
-              <dd>{`${(telemetry?.local.jitter_ms ?? 0).toFixed(2)} ms`}</dd>
-            </div>
-          </dl>
-        ) : (
-          <p className="muted">
-            {state.state === "failed"
-              ? describeFailure(state.reason)
-              : "Connect a phone to see live metrics."}
-          </p>
-        )}
-      </section>
+          </aside>
 
-      <section className="glass panel">
-        <div className="panel-head">
-          <h2>Test stream</h2>
-          <span className="muted small">
-            No codecs yet — this proves the transport.
-          </span>
-        </div>
-
-        <div className="row controls">
-          <label>
-            Rate
-            <input
-              type="number"
-              min={1}
-              max={240}
-              value={rateHz}
-              disabled={testRunning}
-              onChange={(e) => setRateHz(Number(e.target.value))}
-            />
-            <span className="muted small">Hz</span>
-          </label>
-          <label>
-            Frame
-            <input
-              type="number"
-              min={8}
-              max={65000}
-              step={256}
-              value={frameBytes}
-              disabled={testRunning}
-              onChange={(e) => setFrameBytes(Number(e.target.value))}
-            />
-            <span className="muted small">bytes</span>
-          </label>
-          <button
-            className={testRunning ? "" : "primary"}
-            onClick={toggleTestStream}
-            disabled={!connected}
-          >
-            {testRunning ? "Stop" : "Start"}
-          </button>
-        </div>
-
-        {frameBytes > 1200 && (
-          <p className="muted small">
-            Above 1200 bytes, so this exercises fragmentation and reassembly.
-          </p>
-        )}
-
-        {testReport && (
-          <dl className="grid metrics">
-            <div>
-              <dt>Verified</dt>
-              <dd>{testReport.verified}</dd>
+          <div className="content-column">
+            <div className="compact-nav" role="navigation" aria-label="Compact navigation">
+              {(["workspace", "network", "settings"] as View[]).map((item) => (
+                <button key={item} aria-pressed={view === item} onClick={() => setView(item)}>{item}</button>
+              ))}
             </div>
-            <div>
-              <dt>Missing</dt>
-              <dd>{testReport.missing}</dd>
-            </div>
-            <div>
-              <dt>Corrupt</dt>
-              <dd>{testReport.corrupt}</dd>
-            </div>
-            <div>
-              <dt>Out of order</dt>
-              <dd>{testReport.out_of_order}</dd>
-            </div>
-          </dl>
-        )}
-      </section>
 
-      <section className="glass panel">
-        <div className="panel-head">
-          <h2>Microphone</h2>
-          <span className={`dot dot-${mic.active ? "on" : "off"}`} />
-        </div>
-
-        <div className="features">
-          <div className="feature">
-            <div>
-              <div className="feature-label">Phone microphone</div>
-              <div className="muted small">
-                {mic.active
-                  ? `Live — "UnifiedStream Microphone" is available as an input device (${
-                      mic.params ? `${mic.params.codec}, ${mic.params.sample_rate / 1000} kHz` : "…"
-                    })`
-                  : micPending
-                    ? "Waiting for the phone…"
-                    : "Ask the phone to stream its mic to this PC"}
+            {(error || state.state === "failed") && (
+              <div className="global-notice is-error" role="alert">
+                <strong>Action required</strong>
+                <span>{error ?? (state.state === "failed" ? describeFailure(state.reason) : "")}</span>
+                {error && <button className="icon-button" aria-label="Dismiss error" onClick={() => setError(null)}>×</button>}
               </div>
-            </div>
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={mic.active}
-                disabled={!connected || micPending}
-                onChange={() => void toggleMic()}
-              />
-              <span className="slider" />
-            </label>
-          </div>
-        </div>
-
-        {mic.active && (
-          <div className="level-meter" aria-label="microphone level">
-            <div
-              className="level-fill"
-              style={{ width: `${Math.round(micLevel.rms * 100)}%` }}
-            />
-            <div
-              className="level-peak"
-              style={{ left: `${Math.round(micLevel.peak * 100)}%` }}
-            />
-          </div>
-        )}
-
-        {mic.error && (
-          <p className="muted small error-text" role="alert">
-            {mic.error}
-          </p>
-        )}
-      </section>
-
-      <section className="glass panel">
-        <div className="panel-head">
-          <h2>Speaker</h2>
-          <span className={`dot dot-${speaker.active ? "on" : "off"}`} />
-        </div>
-
-        <div className="features">
-          <div className="feature">
-            <div>
-              <div className="feature-label">Wireless speaker</div>
-              <div className="muted small">
-                {speaker.active
-                  ? `Live — play audio into "UnifiedStream Speaker" to hear it on the phone (${
-                      speaker.params
-                        ? `${speaker.params.codec}, ${speaker.params.sample_rate / 1000} kHz, ${
-                            speaker.params.channels === 2 ? "stereo" : "mono"
-                          }`
-                        : "…"
-                    })`
-                  : speaker.starting
-                    ? "Waiting for the phone…"
-                    : "Send this PC's audio to the phone's speaker"}
+            )}
+            {pairing && (
+              <div className="global-notice" role="dialog" aria-modal="true" aria-label="Pairing request">
+                <div><strong>{pairing.device_name}</strong><span> wants to connect · </span><span className="mono muted">{pairing.device_id.slice(0, 8)}…</span></div>
+                <div className="button-row"><button className="primary" onClick={() => void respondPairing(true)}>Allow</button><button onClick={() => void respondPairing(false)}>Deny</button></div>
               </div>
-            </div>
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={speaker.active || speaker.starting}
-                disabled={!connected || speaker.starting}
-                onChange={() => void toggleSpeaker()}
-              />
-              <span className="slider" />
-            </label>
-          </div>
+            )}
 
-          {speaker.active && (
-            <div className="feature">
-              <div>
-                <div className="feature-label">Route system audio</div>
-                <div className="muted small">
-                  {speaker.routed
-                    ? "All system audio goes to the phone; your previous output is restored on stop"
-                    : "Make the virtual sink the default output, so everything plays on the phone"}
+            {view === "workspace" && (
+              <div className="view-stack">
+                <div className="title-row">
+                  <div><span className="eyebrow">Workspace</span><h1>Media bridge</h1><p>{peerName ? `Streaming console for ${peerName}` : "Connect a phone to bring your sources online."}</p></div>
+                  <span className={`state-pill state-${state.state}`}><span className="status-light is-live" aria-hidden="true" />{describeState(state)}</span>
+                </div>
+                <section className="telemetry-grid" aria-label="Live network telemetry">
+                  <MetricCard label="Latency" value={telemetry?.local.rtt_ms != null ? telemetry.local.rtt_ms.toFixed(1) : "—"} unit="ms" />
+                  <MetricCard label="Bandwidth" value={(telemetry?.local.tx_mbps ?? 0).toFixed(2)} unit="Mbps up" accent="violet" />
+                  <MetricCard label="Packet loss" value={(telemetry?.local.loss_pct ?? 0).toFixed(2)} unit="%" accent={quality === "poor" ? "amber" : "teal"} />
+                  <MetricCard label="Jitter" value={(telemetry?.local.jitter_ms ?? 0).toFixed(2)} unit="ms" />
+                </section>
+                <div className="media-grid">
+                  <Panel title="Camera" eyebrow="Video source" className="camera-panel" trailing={<StatusLight active={camera.active} label={camera.active ? "Live" : cameraPending ? "Starting" : "Off"} />}>
+                    <div className="camera-content">
+                      <div className="camera-preview" aria-label="Camera stream preview status">
+                        <span className={`preview-orb ${camera.active ? "is-active" : ""}`} />
+                        <strong>{camera.active ? "CAMERA LIVE" : "PREVIEW STANDBY"}</strong>
+                        <span>{camera.params ? `${camera.params.width} × ${camera.params.height} · ${camera.params.codec.toUpperCase()}` : "MJPEG virtual camera"}</span>
+                      </div>
+                      <div className="control-stack">
+                        <div className="control-row"><div><strong>Phone camera</strong><span>{camera.device ?? "Streams to a v4l2loopback device"}</span></div><SwitchControl label="Phone camera" checked={camera.active} disabled={!connected || cameraPending} onChange={() => void toggleCamera()} /></div>
+                        <dl className="detail-grid"><div><dt>Delivered</dt><dd>{camera.active ? `${cameraStats?.fps ?? 0} fps` : "—"}</dd></div><div><dt>Frames</dt><dd>{cameraStats?.frames_written ?? "—"}</dd></div><div><dt>Decode failures</dt><dd>{cameraStats?.decode_failures ?? "—"}</dd></div></dl>
+                        {camera.error && <p className="error-copy" role="alert">{camera.error}</p>}
+                        {camera.hint && <div className="hint-box"><code>{camera.hint}</code><button onClick={() => void navigator.clipboard.writeText(camera.hint ?? "")}>Copy</button></div>}
+                      </div>
+                    </div>
+                  </Panel>
+
+                  <Panel title="Microphone" eyebrow="Audio input" trailing={<StatusLight active={mic.active} label={mic.active ? "Live" : micPending ? "Starting" : "Off"} />}>
+                    <div className="control-row"><div><strong>Phone microphone</strong><span>{mic.active ? `${mic.params?.codec ?? "audio"} · ${(mic.params?.sample_rate ?? 48000) / 1000} kHz` : "Virtual PipeWire source"}</span></div><SwitchControl label="Phone microphone" checked={mic.active} disabled={!connected || micPending} onChange={() => void toggleMic()} /></div>
+                    <LevelMeter level={mic.active ? micLevel : { rms: 0, peak: 0 }} label="Microphone level" />
+                    {mic.error && <p className="error-copy" role="alert">{mic.error}</p>}
+                  </Panel>
+
+                  <Panel title="Speaker" eyebrow="Audio output" trailing={<StatusLight active={speaker.active} label={speaker.active ? "Live" : speaker.starting ? "Starting" : "Off"} />}>
+                    <div className="control-row"><div><strong>Wireless speaker</strong><span>{speaker.active ? `${speaker.params?.codec ?? "audio"} · ${speaker.params?.channels === 2 ? "stereo" : "mono"}` : "Send PC audio to the phone"}</span></div><SwitchControl label="Wireless speaker" checked={speaker.active || speaker.starting} disabled={!connected || speaker.starting} onChange={() => void run("set_speaker_enabled", { enabled: !(speaker.active || speaker.starting) })} /></div>
+                    <LevelMeter level={speaker.active ? speakerLevel : { rms: 0, peak: 0 }} label="Speaker level" violet />
+                    {speaker.active && <><div className="control-row compact"><div><strong>Route system audio</strong><span>Restore previous output when stopped</span></div><SwitchControl label="Route system audio" checked={speaker.routed} onChange={() => void run("set_speaker_routing", { enabled: !speaker.routed })} /></div><button onClick={() => void run("set_speaker_muted", { muted: !speaker.muted })}>{speaker.muted ? "Unmute" : "Mute"}</button></>}
+                    {speaker.error && <p className="error-copy" role="alert">{speaker.error}</p>}
+                  </Panel>
                 </div>
               </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={speaker.routed}
-                  onChange={() => void toggleSpeakerRouting()}
-                />
-                <span className="slider" />
-              </label>
-            </div>
-          )}
-        </div>
+            )}
 
-        {speaker.active && (
-          <>
-            <div className="level-meter" aria-label="speaker level">
-              <div
-                className="level-fill"
-                style={{ width: `${Math.round(speakerLevel.rms * 100)}%` }}
-              />
-              <div
-                className="level-peak"
-                style={{ left: `${Math.round(speakerLevel.peak * 100)}%` }}
-              />
-            </div>
-            <div className="row">
-              <button onClick={() => void toggleSpeakerMute()}>
-                {speaker.muted ? "Unmute" : "Mute"}
-              </button>
-              {speaker.muted && (
-                <span className="muted small">
-                  Muted — the phone hears silence
-                </span>
-              )}
-            </div>
-          </>
-        )}
-
-        {speaker.error && (
-          <p className="muted small error-text" role="alert">
-            {speaker.error}
-          </p>
-        )}
-      </section>
-
-      <section className="glass panel">
-        <div className="panel-head">
-          <h2>Camera</h2>
-          <span className={`dot dot-${camera.active ? "on" : "off"}`} />
-        </div>
-
-        <div className="features">
-          <div className="feature">
-            <div>
-              <div className="feature-label">Phone camera</div>
-              <div className="muted small">
-                {camera.active
-                  ? `Live — "UnifiedStream Camera" is available as a webcam${
-                      camera.device ? ` on ${camera.device}` : ""
-                    }${
-                      camera.params
-                        ? ` (${camera.params.width}x${camera.params.height}, up to ${camera.params.max_fps} fps)`
-                        : ""
-                    }`
-                  : cameraPending
-                    ? "Waiting for the phone…"
-                    : "Ask the phone to stream its camera as this PC's webcam"}
+            {view === "network" && (
+              <div className="view-stack">
+                <div className="title-row"><div><span className="eyebrow">Network</span><h1>Connection & diagnostics</h1><p>Identity, local discovery, session control, and transport verification.</p></div><span className={`quality-badge quality-${quality}`}>{quality}</span></div>
+                <div className="two-column-grid">
+                  <Panel title="Local host" eyebrow="Discovery" trailing={<StatusLight active={Boolean(status?.advertising)} label={status?.advertising ? "Advertising" : "Stopped"} />}>
+                    <dl className="detail-grid"><div><dt>Name</dt><dd>{status?.device_name ?? "—"}</dd></div><div><dt>Control</dt><dd>{status?.control_port ?? "—"}</dd></div><div><dt>Media</dt><dd>{status?.media_port ?? "—"}</dd></div><div><dt>Capabilities</dt><dd>{status?.caps.join(" · ") || "—"}</dd></div></dl>
+                    <div className="button-row">{status?.advertising ? <button onClick={() => void run("stop_advertising")}>Stop advertising</button> : <button className="primary" onClick={() => void run("start_advertising")}>Start advertising</button>}<button onClick={() => void run("disconnect")} disabled={!connected}>Disconnect</button><button onClick={() => void run("forget_devices")}>Forget trusted devices</button></div>
+                  </Panel>
+                  <Panel title="Current link" eyebrow="Session">
+                    <dl className="detail-grid"><div><dt>State</dt><dd>{describeState(state)}</dd></div><div><dt>Peer</dt><dd>{peerName ?? "—"}</dd></div><div><dt>Session</dt><dd className="mono">{state.state === "connected" ? state.session_id : "—"}</dd></div><div><dt>Download</dt><dd>{(telemetry?.local.rx_mbps ?? 0).toFixed(2)} Mbps</dd></div></dl>
+                  </Panel>
+                </div>
+                <Panel title="Synthetic transport test" eyebrow="Diagnostics" trailing={<StatusLight active={testRunning} label={testRunning ? "Running" : "Stopped"} />}>
+                  <div className="diagnostic-controls"><label>Rate <input type="number" min={1} max={240} value={rateHz} disabled={testRunning} onChange={(event) => setRateHz(Number(event.target.value))} /><span>Hz</span></label><label>Frame <input type="number" min={8} max={65000} step={256} value={frameBytes} disabled={testRunning} onChange={(event) => setFrameBytes(Number(event.target.value))} /><span>bytes</span></label><button className={testRunning ? "danger" : "primary"} disabled={!connected} onClick={() => void toggleTestStream()}>{testRunning ? "Stop test" : "Start test"}</button></div>
+                  {frameBytes > 1200 && <p className="muted">This frame size exercises fragmentation and reassembly.</p>}
+                  <dl className="detail-grid diagnostic-results"><div><dt>Verified</dt><dd>{testReport?.verified ?? "—"}</dd></div><div><dt>Missing</dt><dd>{testReport?.missing ?? "—"}</dd></div><div><dt>Corrupt</dt><dd>{testReport?.corrupt ?? "—"}</dd></div><div><dt>Out of order</dt><dd>{testReport?.out_of_order ?? "—"}</dd></div><div><dt>Bytes</dt><dd>{testReport?.bytes ?? "—"}</dd></div></dl>
+                </Panel>
               </div>
-            </div>
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={camera.active}
-                disabled={!connected || cameraPending}
-                onChange={() => void toggleCamera()}
-              />
-              <span className="slider" />
-            </label>
+            )}
+
+            {view === "settings" && (
+              <div className="view-stack settings-view">
+                <div className="title-row"><div><span className="eyebrow">Settings</span><h1>Appearance</h1><p>Presentation preferences stay local and never affect an active stream.</p></div></div>
+                <Panel title="Theme" eyebrow="Interface">
+                  <div className="theme-options" role="radiogroup" aria-label="Theme"><button role="radio" aria-checked={theme === "dark"} className={theme === "dark" ? "is-selected" : ""} onClick={() => setTheme("dark")}><span className="theme-swatch dark-swatch" />Dark</button><button role="radio" aria-checked={theme === "light"} className={theme === "light" ? "is-selected" : ""} onClick={() => setTheme("light")}><span className="theme-swatch light-swatch" />Light</button></div>
+                </Panel>
+                <Panel title="Runtime contract" eyebrow="About"><p className="body-copy">The redesign uses the existing discovery, session, media, and telemetry backend. Illustrative design controls without runtime support are intentionally not interactive.</p><dl className="detail-grid"><div><dt>Version</dt><dd className="mono">0.1.0</dd></div><div><dt>Desktop backend</dt><dd>PipeWire · v4l2loopback</dd></div><div><dt>Protocol</dt><dd>Trusted LAN</dd></div></dl></Panel>
+              </div>
+            )}
           </div>
         </div>
-
-        {camera.active && (
-          <dl className="grid metrics">
-            <div>
-              <dt>Delivered</dt>
-              {/* 0 fps with the stream active means stalled, not stopped. */}
-              <dd>{`${cameraStats?.fps ?? 0} fps`}</dd>
-            </div>
-            <div>
-              <dt>Frames</dt>
-              <dd>{cameraStats?.frames_written ?? 0}</dd>
-            </div>
-            <div>
-              <dt>Undecodable</dt>
-              <dd>{cameraStats?.decode_failures ?? 0}</dd>
-            </div>
-          </dl>
-        )}
-
-        {camera.error && (
-          <p className="muted small error-text" role="alert">
-            {camera.error}
-          </p>
-        )}
-
-        {camera.hint && (
-          <div className="row">
-            <code className="mono small">{camera.hint}</code>
-            <button
-              onClick={() => void navigator.clipboard.writeText(camera.hint ?? "")}
-            >
-              Copy
-            </button>
-          </div>
-        )}
       </section>
     </main>
   );

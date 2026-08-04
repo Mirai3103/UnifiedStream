@@ -8,17 +8,26 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -26,9 +35,11 @@ import com.laffy.unifiedstream.session.CameraStreamState
 import com.laffy.unifiedstream.session.ConnectionState
 import com.laffy.unifiedstream.session.SessionService
 import com.laffy.unifiedstream.ui.CameraControls
-import com.laffy.unifiedstream.ui.DeviceListScreen
+import com.laffy.unifiedstream.ui.CameraDestination
+import com.laffy.unifiedstream.ui.DevicesDestination
+import com.laffy.unifiedstream.ui.HomeDestination
 import com.laffy.unifiedstream.ui.MicControls
-import com.laffy.unifiedstream.ui.SessionScreen
+import com.laffy.unifiedstream.ui.SettingsDestination
 import com.laffy.unifiedstream.ui.SpeakerControls
 import com.laffy.unifiedstream.ui.UnifiedStreamViewModel
 import com.laffy.unifiedstream.ui.theme.UnifiedStreamTheme
@@ -39,25 +50,30 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            UnifiedStreamTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
-                    UnifiedStreamApp(Modifier.padding(padding))
-                }
+            var darkTheme by rememberSaveable { mutableStateOf(true) }
+            UnifiedStreamTheme(darkTheme = darkTheme) {
+                UnifiedStreamApp(darkTheme = darkTheme, onThemeChange = { darkTheme = it })
             }
         }
     }
 }
 
-/** Which screen is showing. Two destinations do not justify a navigation library. */
-private enum class Screen { Devices, Session }
+enum class AppDestination(val label: String, val symbol: String) {
+    HOME("Home", "●"),
+    CAMERA("Camera", "◉"),
+    DEVICES("Devices", "⌁"),
+    SETTINGS("Settings", "⚙"),
+}
 
 @Composable
 fun UnifiedStreamApp(
+    darkTheme: Boolean,
+    onThemeChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: UnifiedStreamViewModel = viewModel(),
 ) {
     val context = LocalContext.current
-
+    val identity by viewModel.identity.collectAsStateWithLifecycle()
     val devices by viewModel.devices.collectAsStateWithLifecycle()
     val discoveryState by viewModel.discoveryState.collectAsStateWithLifecycle()
     val offerManual by viewModel.offerManualEntry.collectAsStateWithLifecycle()
@@ -81,21 +97,13 @@ fun UnifiedStreamApp(
     val speakerMuted by viewModel.speakerMuted.collectAsStateWithLifecycle()
     val speakerVolume by viewModel.speakerVolume.collectAsStateWithLifecycle()
 
-    var screen by remember { mutableStateOf(Screen.Devices) }
+    var destination by rememberSaveable { mutableStateOf(AppDestination.DEVICES) }
 
-    val notificationPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { /* The session runs either way; without it there is simply no notification. */ }
-
-    val micPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) viewModel.enableMic() else viewModel.onMicPermissionDenied()
     }
-
-    val cameraPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) viewModel.enableCamera() else viewModel.onCameraPermissionDenied()
     }
 
@@ -105,113 +113,142 @@ fun UnifiedStreamApp(
         }
     }
 
-    // Browse only while the device list is showing; mDNS and its multicast lock are not free.
-    DisposableEffect(screen) {
-        if (screen == Screen.Devices) viewModel.startDiscovery()
-        onDispose { if (screen == Screen.Devices) viewModel.stopDiscovery() }
+    DisposableEffect(destination) {
+        if (destination == AppDestination.DEVICES) viewModel.startDiscovery()
+        onDispose { if (destination == AppDestination.DEVICES) viewModel.stopDiscovery() }
     }
 
-    // The foreground service is what keeps the session alive once the user leaves the app.
-    // Re-started when the camera stream turns on so the service can pick up the camera
-    // foreground type, which the platform requires for capture to survive backgrounding.
     LaunchedEffect(connection, cameraState is CameraStreamState.Active) {
         when (val state = connection) {
             is ConnectionState.Connected -> {
-                screen = Screen.Session
+                if (destination == AppDestination.DEVICES) destination = AppDestination.HOME
                 SessionService.start(context, state.peerName)
             }
-
-            is ConnectionState.Connecting, is ConnectionState.Reconnecting ->
-                screen = Screen.Session
-
-            is ConnectionState.Failed -> SessionService.stop(context)
-
-            ConnectionState.Idle -> {
-                SessionService.stop(context)
-                screen = Screen.Devices
+            is ConnectionState.Connecting, is ConnectionState.Reconnecting -> {
+                if (destination == AppDestination.DEVICES) destination = AppDestination.HOME
             }
-
-            ConnectionState.Discovering -> SessionService.stop(context)
+            is ConnectionState.Failed -> SessionService.stop(context)
+            ConnectionState.Idle, ConnectionState.Discovering -> SessionService.stop(context)
         }
     }
 
-    when (screen) {
-        Screen.Devices -> DeviceListScreen(
-            devices = devices,
-            discoveryState = discoveryState,
-            offerManual = offerManual,
-            manualError = manualError,
-            onSelect = viewModel::connect,
-            onAddManual = { host, port -> viewModel.addManualDevice(host, port) },
-            onManualEdited = viewModel::clearManualError,
-            modifier = modifier,
-        )
+    val mic = MicControls(
+        state = micState,
+        level = micLevel,
+        muted = micMuted,
+        gain = micGain,
+        noiseSuppression = micNoiseSuppression,
+        noiseSuppressionAvailable = viewModel.micNoiseSuppressionAvailable,
+        permissionNeeded = micPermissionNeeded,
+        onToggle = { enable ->
+            if (!enable) viewModel.disableMic()
+            else if (viewModel.hasRecordPermission()) viewModel.enableMic()
+            else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        },
+        onMuteToggle = viewModel::setMicMuted,
+        onGainChange = viewModel::setMicGain,
+        onNoiseSuppressionToggle = viewModel::setMicNoiseSuppression,
+    )
+    val camera = CameraControls(
+        state = cameraState,
+        facing = cameraFacing,
+        resolution = cameraResolution,
+        permissionNeeded = cameraPermissionNeeded,
+        onToggle = { enable ->
+            if (!enable) viewModel.disableCamera()
+            else if (viewModel.hasCameraPermission()) viewModel.enableCamera()
+            else cameraPermission.launch(Manifest.permission.CAMERA)
+        },
+        onFacingToggle = {
+            viewModel.setCameraFacing(if (cameraFacing == CameraFacing.BACK) CameraFacing.FRONT else CameraFacing.BACK)
+        },
+        onResolutionSelect = viewModel::setCameraResolution,
+        onPreviewSurface = viewModel::setCameraPreview,
+    )
+    val speaker = SpeakerControls(
+        state = speakerState,
+        level = speakerLevel,
+        muted = speakerMuted,
+        volume = speakerVolume,
+        onToggle = { if (it) viewModel.enableSpeaker() else viewModel.disableSpeaker() },
+        onMuteToggle = viewModel::setSpeakerMuted,
+        onVolumeChange = viewModel::setSpeakerVolume,
+    )
 
-        Screen.Session -> SessionScreen(
-            connection = connection,
-            dashboard = dashboard,
-            testReport = testReport,
-            testRunning = testRunning,
-            mic = MicControls(
-                state = micState,
-                level = micLevel,
-                muted = micMuted,
-                gain = micGain,
-                noiseSuppression = micNoiseSuppression,
-                noiseSuppressionAvailable = viewModel.micNoiseSuppressionAvailable,
-                permissionNeeded = micPermissionNeeded,
-                onToggle = { enable ->
-                    if (!enable) {
-                        viewModel.disableMic()
-                    } else if (viewModel.hasRecordPermission()) {
-                        viewModel.enableMic()
-                    } else {
-                        micPermission.launch(Manifest.permission.RECORD_AUDIO)
+    Scaffold(
+        modifier = modifier,
+        topBar = {
+            if (connection is ConnectionState.Failed) {
+                Surface(color = MaterialTheme.colorScheme.errorContainer) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                        Text(
+                            text = (connection as ConnectionState.Failed).reason.display,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                     }
-                },
-                onMuteToggle = viewModel::setMicMuted,
-                onGainChange = viewModel::setMicGain,
-                onNoiseSuppressionToggle = viewModel::setMicNoiseSuppression,
-            ),
-            camera = CameraControls(
-                state = cameraState,
-                facing = cameraFacing,
-                resolution = cameraResolution,
-                permissionNeeded = cameraPermissionNeeded,
-                onToggle = { enable ->
-                    if (!enable) {
-                        viewModel.disableCamera()
-                    } else if (viewModel.hasCameraPermission()) {
-                        viewModel.enableCamera()
-                    } else {
-                        cameraPermission.launch(Manifest.permission.CAMERA)
-                    }
-                },
-                onFacingToggle = {
-                    viewModel.setCameraFacing(
-                        if (cameraFacing == CameraFacing.BACK) CameraFacing.FRONT else CameraFacing.BACK,
-                    )
-                },
-                onResolutionSelect = viewModel::setCameraResolution,
-                onPreviewSurface = viewModel::setCameraPreview,
-            ),
-            speaker = SpeakerControls(
-                state = speakerState,
-                level = speakerLevel,
-                muted = speakerMuted,
-                volume = speakerVolume,
-                onToggle = { enable ->
-                    if (enable) viewModel.enableSpeaker() else viewModel.disableSpeaker()
-                },
-                onMuteToggle = viewModel::setSpeakerMuted,
-                onVolumeChange = viewModel::setSpeakerVolume,
-            ),
-            onStartTestStream = viewModel::startTestStream,
-            onStopTestStream = viewModel::stopTestStream,
-            onDisconnect = viewModel::disconnect,
-            onCancelReconnect = viewModel::cancelReconnect,
-            onBack = { screen = Screen.Devices },
-            modifier = modifier,
-        )
+                }
+            }
+        },
+        bottomBar = {
+            UnifiedBottomBar(destination = destination, onDestination = { destination = it })
+        },
+    ) { padding ->
+        val contentModifier = Modifier.padding(padding)
+        when (destination) {
+            AppDestination.HOME -> HomeDestination(
+                connection = connection,
+                dashboard = dashboard,
+                mic = mic,
+                camera = camera,
+                speaker = speaker,
+                onOpenDevices = { destination = AppDestination.DEVICES },
+                onOpenCamera = { destination = AppDestination.CAMERA },
+                modifier = contentModifier,
+            )
+            AppDestination.CAMERA -> CameraDestination(connection, camera, contentModifier)
+            AppDestination.DEVICES -> DevicesDestination(
+                devices = devices,
+                discoveryState = discoveryState,
+                offerManual = offerManual,
+                manualError = manualError,
+                connection = connection,
+                onSelect = viewModel::connect,
+                onAddManual = { host, port -> viewModel.addManualDevice(host, port) },
+                onManualEdited = viewModel::clearManualError,
+                modifier = contentModifier,
+            )
+            AppDestination.SETTINGS -> SettingsDestination(
+                identity = identity,
+                connection = connection,
+                darkTheme = darkTheme,
+                testReport = testReport,
+                testRunning = testRunning,
+                onThemeChange = onThemeChange,
+                onStartTestStream = viewModel::startTestStream,
+                onStopTestStream = viewModel::stopTestStream,
+                onDisconnect = viewModel::disconnect,
+                onCancelReconnect = viewModel::cancelReconnect,
+                modifier = contentModifier,
+            )
+        }
+    }
+}
+
+@Composable
+fun UnifiedBottomBar(
+    destination: AppDestination,
+    onDestination: (AppDestination) -> Unit,
+) {
+    NavigationBar {
+        AppDestination.entries.forEach { item ->
+            NavigationBarItem(
+                selected = destination == item,
+                onClick = { onDestination(item) },
+                icon = { Text(item.symbol, modifier = Modifier.semantics { contentDescription = "${item.label} icon" }) },
+                label = { Text(item.label) },
+                modifier = Modifier.semantics { contentDescription = "${item.label} destination" },
+            )
+        }
     }
 }
