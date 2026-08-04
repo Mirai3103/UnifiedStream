@@ -61,6 +61,8 @@ Desktop action/navigation glyphs come from the pinned `lucide-react` package; An
 - Android screens use scrolling content, scaffold/title-bar insets, Material minimum targets, explicit Back/Settings icon semantics, non-color state text, and system-aware Compose animation. The title-action test also enforces 48-dp minimum dimensions.
 - Desktop 32/128/256/512 PNG, Windows ICO, macOS ICNS, Windows Store sizes, and Android mdpi through xxxhdpi legacy/round resources were regenerated and dimension-checked; adaptive and monochrome Android vectors are packaged by the debug builds.
 
-## Manual verification still required
+## Manual verification status
 
-The available Android device `3B65BT02H6G00000` is reported as `offline` by ADB. Consequently, the Compose instrumentation suite, physical-device light/dark comparison, camera/permission/media end-to-end paths, and cross-device active-stream continuity remain pending. Desktop runtime startup was confirmed through `tauri dev`, but representative visual screenshots and the full paired-device scenario remain pending before archive and merge.
+On 2026-08-04 the physical Android device `3B65BT02H6G00000` was online. Devices launch, manual IP connection, Home, Camera, Settings, title-bar Back/Settings actions, light/dark theme switching, camera permission and preview, microphone permission/streaming, speaker streaming, live telemetry, and disconnect were exercised against the desktop backend. Active camera/microphone/speaker state remained represented while returning from Camera and switching theme; disconnect returned the UI to `Not connected` and cleared live metrics. Screenshots were captured under `/tmp/unifiedstream-*.png`.
+
+Discovery was attempted (no mDNS result on the test network) and the manual fallback succeeded. Pairing reject/timeout, permission denial, synthetic test-stream, and backend-unavailable guidance still require a dedicated scenario. Desktop `tauri dev` startup and backend sockets were confirmed, but representative wide/narrow dark/light visual screenshots have not yet been recorded.

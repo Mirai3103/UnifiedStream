@@ -49,9 +49,9 @@
 ## 7. Visual and End-to-End Verification
 
 - [ ] 7.1 Compare desktop dark and light modes at representative wide and narrow sizes against only the in-app content of `design/Desktop.DESIGN.md` and `design/Desktop.html`, confirming the mock canvas, simulated title bar, traffic-light controls, and outer window frame are absent and recording intentional deviations required for real behavior or accessibility.
-- [ ] 7.2 Compare Android Home, Camera, Devices, and Settings in dark and light modes on a physical or representative emulated device against `design/Android.DESIGN.md` and `design/Android.html`.
+- [x] 7.2 Compare Android Home, Camera, Devices, and Settings in dark and light modes on a physical or representative emulated device against `design/Android.DESIGN.md` and `design/Android.html`.
 - [ ] 7.3 Manually exercise discovery, manual connection, pairing accept/reject/timeout, reconnect, disconnect, camera preview/control, microphone controls, speaker controls, telemetry, test stream, permission denial, and backend-unavailable guidance through the redesigned interfaces.
-- [ ] 7.4 Confirm active streams continue unchanged while navigating and switching theme, global prompts remain actionable, and stale session/stream metrics clear when their owner stops.
+- [x] 7.4 Confirm active streams continue unchanged while navigating and switching theme, global prompts remain actionable, and stale session/stream metrics clear when their owner stops.
 
 ## 8. Validation and OpenSpec Lifecycle
 

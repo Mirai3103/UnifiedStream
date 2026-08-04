@@ -28,6 +28,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -35,6 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.laffy.unifiedstream.session.CameraStreamState
@@ -58,6 +61,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             var darkTheme by rememberSaveable { mutableStateOf(true) }
             UnifiedStreamTheme(darkTheme = darkTheme) {
+                val view = LocalView.current
+                SideEffect {
+                    if (!view.isInEditMode) {
+                        WindowCompat.getInsetsController(window, view).apply {
+                            isAppearanceLightStatusBars = !darkTheme
+                            isAppearanceLightNavigationBars = !darkTheme
+                        }
+                    }
+                }
                 UnifiedStreamApp(darkTheme = darkTheme, onThemeChange = { darkTheme = it })
             }
         }
