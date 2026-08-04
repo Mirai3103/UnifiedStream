@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>Unified Stream Desktop</title>
+  
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Space Grotesk', 'Helvetica Neue', Helvetica, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { color: var(--fg); }
+  :root {
+    --bg: #08090b; --bg-2: #0e1116; --chrome: rgba(255,255,255,0.03);
+    --panel: rgba(255,255,255,0.045); --panel-2: rgba(255,255,255,0.075);
+    --border: rgba(255,255,255,0.10); --border-2: rgba(255,255,255,0.18);
+    --fg: #e8ecf2; --fg-2: #b6bdc9; --muted: #7c8492;
+    --accent: oklch(0.74 0.13 195); --accent-2: oklch(0.74 0.13 292); --warn: oklch(0.76 0.14 75);
+    --accent-soft: oklch(0.74 0.13 195 / 0.16); --shadow: 0 24px 60px rgba(0,0,0,0.55);
+    --stripe: rgba(255,255,255,0.055);
+  }
+  [data-theme="light"] {
+    --bg: #eef0f4; --bg-2: #ffffff; --chrome: rgba(255,255,255,0.55);
+    --panel: rgba(255,255,255,0.62); --panel-2: rgba(255,255,255,0.85);
+    --border: rgba(16,22,34,0.09); --border-2: rgba(16,22,34,0.18);
+    --fg: #12161c; --fg-2: #3c444f; --muted: #6b7280;
+    --accent: oklch(0.55 0.13 195); --accent-2: oklch(0.55 0.13 292); --warn: oklch(0.62 0.14 75);
+    --accent-soft: oklch(0.55 0.13 195 / 0.12); --shadow: 0 20px 44px rgba(16,22,34,0.12);
+    --stripe: rgba(16,22,34,0.05);
+  }
+  @keyframes vu { 0%,100% { transform: scaleY(0.18); } 50% { transform: scaleY(1); } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  @keyframes drift { 0% { transform: translate3d(0,0,0); } 100% { transform: translate3d(-3%, 4%, 0); } }
+  input[type="range"] { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 99px; background: var(--border-2); outline: none; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 99px; background: var(--accent); border: 3px solid var(--bg-2); box-shadow: 0 0 0 1px var(--border-2); cursor: pointer; }
+</style>
+
+</head>
+<body>
+  <main id="app"></main>
+  <template id="dc-template"><div data-theme="{{ theme }}" ref="{{ rootRef }}" style="min-height: 100vh; background: var(--bg); color: var(--fg); padding: 28px; box-sizing: border-box; display: flex; justify-content: center;">
+
+  <div style="width: 100%; max-width: 1420px; height: 880px; position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--border); box-shadow: var(--shadow); background: var(--bg-2); display: flex; flex-direction: column;">
+
+    <div style="position: absolute; inset: -20% -10%; pointer-events: none; opacity: 0.5; background: radial-gradient(38% 42% at 12% 8%, var(--accent-soft), transparent 70%), radial-gradient(34% 40% at 88% 92%, oklch(0.74 0.13 292 / 0.14), transparent 70%); animation: drift 26s ease-in-out infinite alternate;"></div>
+
+    <!-- window chrome -->
+    <div style="position: relative; z-index: 2; height: 46px; flex: 0 0 46px; display: flex; align-items: center; gap: 14px; padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--chrome); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);">
+      <div style="display: flex; gap: 7px;">
+        <div style="width: 11px; height: 11px; border-radius: 99px; background: oklch(0.68 0.16 25);"></div>
+        <div style="width: 11px; height: 11px; border-radius: 99px; background: oklch(0.78 0.13 85);"></div>
+        <div style="width: 11px; height: 11px; border-radius: 99px; background: oklch(0.74 0.13 150);"></div>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 9px; margin-left: 6px;">
+        <span style="font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em;">Unified Stream</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted);">v0.4.1 · tauri</span>
+      </div>
+      <div style="flex: 1;"></div>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 99px; border: 1px solid var(--border); background: var(--panel); font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--fg-2);">
+        <span style="width: 6px; height: 6px; border-radius: 99px; background: var(--accent); animation: pulse 2s ease-in-out infinite;"></span>
+        <span>{{ hostLabel }}</span>
+      </div>
+      <div onClick="{{ toggleTheme }}" title="Toggle theme" style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 5px 11px; border-radius: 99px; border: 1px solid var(--border); background: var(--panel); font-size: 11px; color: var(--fg-2); user-select: none;" style-hover="border-color: var(--border-2); color: var(--fg);">
+        <span style="width: 9px; height: 9px; border-radius: 99px; border: 1.5px solid currentColor; background: var(--fg-2);"></span>
+        <span>{{ themeLabel }}</span>
+      </div>
+    </div>
+
+    <div style="position: relative; z-index: 2; flex: 1; display: grid; grid-template-columns: 252px 1fr; min-height: 0;">
+
+      <!-- sidebar -->
+      <div style="border-right: 1px solid var(--border); padding: 18px 14px; display: flex; flex-direction: column; gap: 20px; background: var(--chrome); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); min-height: 0;">
+
+        <div style="display: flex; align-items: center; gap: 11px; padding: 4px 6px;">
+          <div style="width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--border-2); background: var(--accent-soft); display: grid; place-items: center;">
+            <div style="width: 11px; height: 11px; border-radius: 3px; background: var(--accent);"></div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 13px; font-weight: 600;">Pixel 8 Pro</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted);">192.168.1.24 · mDNS</span>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 3px;">
+          <span style="font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); padding: 0 8px 6px;">Workspace</span>
+          <sc-for list="{{ nav }}" as="item" hint-placeholder-count="3">
+            <div onClick="{{ item.go }}" style="display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 10px; cursor: pointer; font-size: 13px; color: var(--fg-2); border: 1px solid transparent; user-select: none;" style-hover="background: var(--panel); color: var(--fg);">
+              <span style="width: 7px; height: 7px; border-radius: 2px; background: var(--muted);"></span>
+              <span>{{ item.label }}</span>
+              <span style="flex: 1;"></span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted);">{{ item.hint }}</span>
+            </div>
+          </sc-for>
+          <div style="display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 10px; font-size: 13px; color: var(--fg); border: 1px solid var(--border-2); background: var(--panel-2); position: absolute; opacity: 0; pointer-events: none;"></div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); padding: 0 8px;">Sources</span>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel);">
+            <span style="width: 6px; height: 6px; border-radius: 99px; background: {{ camDot }};"></span>
+            <span style="font-size: 12.5px; flex: 1;">Camera</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted);">{{ camState }}</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel);">
+            <span style="width: 6px; height: 6px; border-radius: 99px; background: {{ micDot }};"></span>
+            <span style="font-size: 12.5px; flex: 1;">Microphone</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted);">{{ micState }}</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel);">
+            <span style="width: 6px; height: 6px; border-radius: 99px; background: {{ spkDot }};"></span>
+            <span style="font-size: 12.5px; flex: 1;">Speaker</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted);">{{ spkState }}</span>
+          </div>
+        </div>
+
+        <div style="flex: 1;"></div>
+
+        <div style="border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--panel); display: flex; flex-direction: column; gap: 9px;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 11.5px; color: var(--fg-2);">Backend</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--accent);">{{ backendTag }}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 5px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted); line-height: 1.5;">
+            <span>{{ backendVideo }}</span>
+            <span>{{ backendAudioIn }}</span>
+            <span>{{ backendAudioOut }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- main -->
+      <div style="min-height: 0; overflow-y: auto; padding: 22px 26px 30px;">
+
+        <div style="display: flex; align-items: flex-end; gap: 18px; margin-bottom: 20px;">
+          <div style="display: flex; flex-direction: column; gap: 5px;">
+            <span style="font-size: 24px; font-weight: 600; letter-spacing: -0.015em;">{{ viewTitle }}</span>
+            <span style="font-size: 12.5px; color: var(--muted);">{{ viewSub }}</span>
+          </div>
+          <div style="flex: 1;"></div>
+          <div onClick="{{ toggleAll }}" style="padding: 9px 16px; border-radius: 10px; cursor: pointer; font-size: 12.5px; font-weight: 500; border: 1px solid var(--border-2); background: var(--panel-2); user-select: none;" style-hover="border-color: var(--accent);">{{ toggleAllLabel }}</div>
+          <div style="padding: 9px 16px; border-radius: 10px; font-size: 12.5px; font-weight: 500; color: #06131a; background: var(--accent); cursor: pointer; user-select: none;" style-hover="opacity: 0.88;">Pair new device</div>
+        </div>
+
+        <!-- network strip -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px;">
+          <div style="border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; background: var(--panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); display: flex; flex-direction: column; gap: 8px;">
+            <span style="font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);">Ping</span>
+            <div style="display: flex; align-items: baseline; gap: 5px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 500;">{{ ping }}</span>
+              <span style="font-size: 11px; color: var(--muted);">ms</span>
+            </div>
+            <div style="display: flex; align-items: flex-end; gap: 3px; height: 22px;">
+              <sc-for list="{{ pingBars }}" as="b" hint-placeholder-count="14">
+                <div style="width: 5px; border-radius: 2px; background: var(--accent); opacity: 0.75; height: {{ b.h }};"></div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; background: var(--panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); display: flex; flex-direction: column; gap: 8px;">
+            <span style="font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);">Bandwidth</span>
+            <div style="display: flex; align-items: baseline; gap: 5px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 500;">{{ mbps }}</span>
+              <span style="font-size: 11px; color: var(--muted);">Mbps ↑</span>
+            </div>
+            <div style="height: 4px; border-radius: 99px; background: var(--border-2); overflow: hidden;">
+              <div style="height: 100%; border-radius: 99px; background: var(--accent-2); width: {{ mbpsPct }};"></div>
+            </div>
+          </div>
+          <div style="border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; background: var(--panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); display: flex; flex-direction: column; gap: 8px;">
+            <span style="font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);">Packet loss</span>
+            <div style="display: flex; align-items: baseline; gap: 5px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 500;">{{ loss }}</span>
+              <span style="font-size: 11px; color: var(--muted);">%</span>
+            </div>
+            <span style="font-size: 11px; color: var(--fg-2);">{{ lossNote }}</span>
+          </div>
+          <div style="border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; background: var(--panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); display: flex; flex-direction: column; gap: 8px;">
+            <span style="font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);">Transport</span>
+            <div style="display: flex; align-items: baseline; gap: 6px;">
+              <span style="font-size: 18px; font-weight: 600;">WebRTC</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted);">UDP/SRTP</span>
+            </div>
+            <span style="font-size: 11px; color: var(--fg-2);">Direct LAN · no relay</span>
+          </div>
+        </div>
+
+        <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+
+            <!-- camera card -->
+            <div style="border: 1px solid var(--border); border-radius: 16px; background: var(--panel); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); overflow: hidden; display: grid; grid-template-columns: 340px 1fr;">
+              <div style="position: relative; border-right: 1px solid var(--border); background: repeating-linear-gradient(135deg, var(--stripe) 0 8px, transparent 8px 16px); min-height: 208px; display: grid; place-items: center;">
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                  <div style="width: 40px; height: 28px; border-radius: 6px; border: 1.5px solid var(--muted);"></div>
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted);">camera preview</span>
+                </div>
+                <div style="position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 99px; background: rgba(0,0,0,0.42); border: 1px solid rgba(255,255,255,0.16); color: #fff; font-family: 'JetBrains Mono', monospace; font-size: 10px;">
+                  <span style="width: 6px; height: 6px; border-radius: 99px; background: oklch(0.7 0.19 25); animation: pulse 1.6s ease-in-out infinite;"></span>
+                  <span>{{ camBadge }}</span>
+                </div>
+              </div>
+              <div style="padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <div style="display: flex; flex-direction: column; gap: 3px;">
+                    <span style="font-size: 15.5px; font-weight: 600;">Virtual Camera</span>
+                    <span style="font-size: 12px; color: var(--muted);">Phone → PC · H.264 hardware encode</span>
+                  </div>
+                  <div style="flex: 1;"></div>
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted);">{{ camSink }}</span>
+                  <div onClick="{{ toggleCam }}" style="width: 46px; height: 26px; border-radius: 99px; padding: 3px; cursor: pointer; box-sizing: border-box; border: 1px solid var(--border-2); display: flex; background: {{ camTrackBg }}; justify-content: {{ camJustify }};">
+                    <div style="width: 18px; height: 18px; border-radius: 99px; background: {{ knob }}; box-shadow: 0 2px 6px rgba(0,0,0,0.35);"></div>
+                  </div>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                  <sc-for list="{{ camChips }}" as="c" hint-placeholder-count="5">
+                    <div onClick="{{ c.go }}" style="padding: 7px 13px; border-radius: 9px; cursor: pointer; font-size: 12px; user-select: none; border: 1px solid {{ c.border }}; background: {{ c.bg }}; color: {{ c.fg }};" style-hover="border-color: var(--accent);">{{ c.label }}</div>
+                  </sc-for>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding-top: 4px; border-top: 1px solid var(--border);">
+                  <div style="display: flex; flex-direction: column; gap: 3px; padding-top: 10px;">
+                    <span style="font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);">Bitrate</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px;">6.2 Mbps</span>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 3px; padding-top: 10px;">
+                    <span style="font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);">Encode</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px;">MediaCodec</span>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 3px; padding-top: 10px;">
+                    <span style="font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);">Glass-to-glass</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px;">{{ camLatency }} ms</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+
+              <!-- mic card -->
+              <div style="border: 1px solid var(--border); border-radius: 16px; background: var(--panel); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); padding: 18px 20px; display: flex; flex-direction: column; gap: 15px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <div style="display: flex; flex-direction: column; gap: 3px;">
+                    <span style="font-size: 15.5px; font-weight: 600;">Virtual Microphone</span>
+                    <span style="font-size: 12px; color: var(--muted);">Phone → PC · Opus 48 kHz</span>
+                  </div>
+                  <div style="flex: 1;"></div>
+                  <div onClick="{{ toggleMic }}" style="width: 46px; height: 26px; border-radius: 99px; padding: 3px; cursor: pointer; box-sizing: border-box; border: 1px solid var(--border-2); display: flex; background: {{ micTrackBg }}; justify-content: {{ micJustify }};">
+                    <div style="width: 18px; height: 18px; border-radius: 99px; background: {{ knob }}; box-shadow: 0 2px 6px rgba(0,0,0,0.35);"></div>
+                  </div>
+                </div>
+                <div style="height: 66px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); display: flex; align-items: center; justify-content: center; gap: 4px; padding: 0 14px; overflow: hidden;">
+                  {{ micVisual }}
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 11px;">
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 12px; color: var(--fg-2); width: 82px;">Input gain</span>
+                    <input type="range" min="0" max="100" value="{{ gain }}" onChange="{{ setGain }}" style="flex: 1;" />
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; width: 46px; text-align: right;">{{ gainDb }}</span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 12px; color: var(--fg-2); width: 82px;">Noise supp.</span>
+                    <div onClick="{{ toggleNs }}" style="padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 11.5px; user-select: none; border: 1px solid {{ nsBorder }}; background: {{ nsBg }}; color: {{ nsFg }};">{{ nsLabel }}</div>
+                    <span style="flex: 1;"></span>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted);">{{ micSink }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- speaker card -->
+              <div style="border: 1px solid var(--border); border-radius: 16px; background: var(--panel); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); padding: 18px 20px; display: flex; flex-direction: column; gap: 15px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <div style="display: flex; flex-direction: column; gap: 3px;">
+                    <span style="font-size: 15.5px; font-weight: 600;">Wireless Speaker</span>
+                    <span style="font-size: 12px; color: var(--muted);">PC → Phone · system audio capture</span>
+                  </div>
+                  <div style="flex: 1;"></div>
+                  <div onClick="{{ toggleSpk }}" style="width: 46px; height: 26px; border-radius: 99px; padding: 3px; cursor: pointer; box-sizing: border-box; border: 1px solid var(--border-2); display: flex; background: {{ spkTrackBg }}; justify-content: {{ spkJustify }};">
+                    <div style="width: 18px; height: 18px; border-radius: 99px; background: {{ knob }}; box-shadow: 0 2px 6px rgba(0,0,0,0.35);"></div>
+                  </div>
+                </div>
+                <div style="height: 66px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); display: flex; align-items: center; justify-content: center; gap: 4px; padding: 0 14px; overflow: hidden;">
+                  {{ spkVisual }}
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 11px;">
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 12px; color: var(--fg-2); width: 82px;">Volume</span>
+                    <input type="range" min="0" max="100" value="{{ vol }}" onChange="{{ setVol }}" style="flex: 1;" />
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; width: 46px; text-align: right;">{{ vol }}%</span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 12px; color: var(--fg-2); width: 82px;">Buffer</span>
+                    <div style="display: flex; gap: 6px;">
+                      <sc-for list="{{ bufChips }}" as="b" hint-placeholder-count="3">
+                        <div onClick="{{ b.go }}" style="padding: 6px 11px; border-radius: 8px; cursor: pointer; font-size: 11.5px; user-select: none; border: 1px solid {{ b.border }}; background: {{ b.bg }}; color: {{ b.fg }};">{{ b.label }}</div>
+                      </sc-for>
+                    </div>
+                    <span style="flex: 1;"></span>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted);">{{ spkSource }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- log -->
+            <div style="border: 1px solid var(--border); border-radius: 16px; background: var(--panel); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); padding: 16px 20px; display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 12.5px; font-weight: 600;">Session log</span>
+                <span style="flex: 1;"></span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted);">uptime 00:14:07</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg-2);">
+                <sc-for list="{{ logs }}" as="l" hint-placeholder-count="4">
+                  <div style="display: flex; gap: 12px;">
+                    <span style="color: var(--muted); width: 62px; flex: 0 0 62px;">{{ l.t }}</span>
+                    <span style="color: var(--accent); width: 58px; flex: 0 0 58px;">{{ l.tag }}</span>
+                    <span>{{ l.msg }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isNetwork }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="border: 1px solid var(--border); border-radius: 16px; background: var(--panel); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;">
+              <span style="font-size: 13px; font-weight: 600;">Discovered on this LAN</span>
+              <sc-for list="{{ devices }}" as="d" hint-placeholder-count="3">
+                <div style="display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2);">
+                  <span style="width: 8px; height: 8px; border-radius: 99px; background: {{ d.dot }};"></span>
+                  <div style="display: flex; flex-direction: column; gap: 2px;">
+                    <span style="font-size: 13px; font-weight: 500;">{{ d.name }}</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted);">{{ d.meta }}</span>
+                  </div>
+                  <span style="flex: 1;"></span>
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg-2);">{{ d.rtt }}</span>
+                  <div style="padding: 7px 14px; border-radius: 9px; font-size: 12px; cursor: pointer; border: 1px solid var(--border-2); background: var(--panel);" style-hover="border-color: var(--accent);">{{ d.action }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+              <div style="border: 1px solid var(--border); border-radius: 16px; background: var(--panel); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;">
+                <span style="font-size: 13px; font-weight: 600;">Transport policy</span>
+                <sc-for list="{{ transportRows }}" as="r" hint-placeholder-count="3">
+                  <div style="display: flex; align-items: center; gap: 12px; font-size: 12.5px; color: var(--fg-2);">
+                    <span style="flex: 1;">{{ r.label }}</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg);">{{ r.value }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="border: 1px solid var(--border); border-radius: 16px; background: var(--panel); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px;">
+                <span style="font-size: 13px; font-weight: 600;">Latency budget</span>
+                <sc-for list="{{ budget }}" as="b" hint-placeholder-count="4">
+                  <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <div style="display: flex; font-size: 12px; color: var(--fg-2);">
+                      <span style="flex: 1;">{{ b.label }}</span>
+                      <span style="font-family: 'JetBrains Mono', monospace;">{{ b.ms }} ms</span>
+                    </div>
+                    <div style="height: 4px; border-radius: 99px; background: var(--border-2); overflow: hidden;">
+                      <div style="height: 100%; background: var(--accent); width: {{ b.pct }};"></div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+            <div style="border: 1px solid var(--border); border-radius: 16px; background: var(--panel); padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;">
+              <span style="font-size: 13px; font-weight: 600;">System integration</span>
+              <sc-for list="{{ integrations }}" as="i" hint-placeholder-count="3">
+                <div style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2);">
+                  <span style="width: 7px; height: 7px; border-radius: 99px; margin-top: 6px; background: {{ i.dot }};"></span>
+                  <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <span style="font-size: 12.5px; font-weight: 500;">{{ i.name }}</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--muted); line-height: 1.5;">{{ i.detail }}</span>
+                  </div>
+                  <span style="flex: 1;"></span>
+                  <span style="font-size: 11px; color: var(--fg-2);">{{ i.status }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="border: 1px solid var(--border); border-radius: 16px; background: var(--panel); padding: 18px 20px; display: flex; flex-direction: column; gap: 13px;">
+              <span style="font-size: 13px; font-weight: 600;">Preferences</span>
+              <sc-for list="{{ prefs }}" as="p" hint-placeholder-count="4">
+                <div style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border);">
+                  <div style="display: flex; flex-direction: column; gap: 3px;">
+                    <span style="font-size: 12.5px;">{{ p.label }}</span>
+                    <span style="font-size: 11px; color: var(--muted);">{{ p.hint }}</span>
+                  </div>
+                  <span style="flex: 1;"></span>
+                  <div onClick="{{ p.go }}" style="width: 40px; height: 23px; border-radius: 99px; padding: 3px; cursor: pointer; box-sizing: border-box; border: 1px solid var(--border-2); display: flex; background: {{ p.bg }}; justify-content: {{ p.justify }};">
+                    <div style="width: 15px; height: 15px; border-radius: 99px; background: {{ knob }};"></div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</div></template>
+  <script>
+class DCLogic {
+  constructor(props = {}) { this.props = props; }
+  setState(patch) {
+    this.state = { ...this.state, ...(typeof patch === 'function' ? patch(this.state) : patch) };
+    window.__dcRender();
+  }
+}
+
+const React = {
+  createRef() { return { current: null }; },
+  createElement(tag, props, ...children) {
+    const node = document.createElement(tag);
+    const options = props || {};
+    for (const [key, value] of Object.entries(options)) {
+      if (key === 'key' || value == null) continue;
+      if (key === 'style' && typeof value === 'object') {
+        for (const [property, setting] of Object.entries(value)) {
+          node.style[property] = typeof setting === 'number' && setting !== 0 ? setting + 'px' : setting;
+        }
+      }
+      else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2).toLowerCase(), value);
+      else node.setAttribute(key, value);
+    }
+    for (const child of children.flat(Infinity)) {
+      if (child == null || child === false) continue;
+      node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+    }
+    return node;
+  }
+};
+
+class Component extends DCLogic {
+  state = {
+    theme: null, view: 'dashboard', platform: null,
+    cam: true, mic: true, spk: false, ns: true,
+    gain: 62, vol: 48, res: '1080p', fps: '60', lens: 'Rear', flash: false, buf: '40',
+    ping: 12, mbps: 8.4, loss: 0.2, bars: [], autostart: true, tray: true, wake: false, hw: true
+  };
+
+  componentDidMount() {
+    this.t = setInterval(() => {
+      const bars = Array.from({ length: 16 }, () => 30 + Math.round(Math.random() * 70));
+      this.setState({
+        ping: 9 + Math.round(Math.random() * 8),
+        mbps: +(6.5 + Math.random() * 3.4).toFixed(1),
+        loss: +(Math.random() * 0.5).toFixed(2),
+        bars
+      });
+    }, 1400);
+  }
+  componentWillUnmount() { clearInterval(this.t); }
+  componentDidUpdate() { this.applyAccent(); }
+
+  applyAccent() {
+    const el = this.root && this.root.current, a = this.accent();
+    if (!el || !a) return;
+    el.style.setProperty('--accent', a);
+    el.style.setProperty('--accent-soft', a + '28');
+  }
+
+  theme() { return this.state.theme ?? this.props.theme ?? 'dark'; }
+  accent() { return this.props.accentColor ?? null; }
+  plat() { return this.state.platform ?? this.props.platform ?? 'linux'; }
+
+  vu(active, count, hue) {
+    const bars = [];
+    for (let i = 0; i < count; i++) {
+      const h = active ? 12 + ((i * 37) % 46) : 4;
+      bars.push(React.createElement('div', {
+        key: i,
+        style: {
+          width: 4, borderRadius: 2, height: h + 'px', flex: '0 0 4px',
+          background: hue, opacity: active ? 0.9 : 0.3, transformOrigin: 'center',
+          animation: active ? `vu ${(620 + (i * 53) % 520)}ms ease-in-out ${(i * 41) % 300}ms infinite` : 'none'
+        }
+      }));
+    }
+    return React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 4, height: 48 } }, bars);
+  }
+
+  chip(label, on, go) {
+    return { label, go, border: on ? 'var(--accent)' : 'var(--border)', bg: on ? 'var(--accent-soft)' : 'var(--panel-2)', fg: on ? 'var(--fg)' : 'var(--fg-2)' };
+  }
+
+  renderVals() {
+    const s = this.state, dark = this.theme() === 'dark', linux = this.plat() === 'linux';
+    const set = (k, v) => () => this.setState({ [k]: v });
+    const dot = on => (on ? 'var(--accent)' : 'var(--muted)');
+    const tog = on => ({ bg: on ? 'var(--accent)' : 'var(--border-2)', justify: on ? 'flex-end' : 'flex-start' });
+    const camT = tog(s.cam), micT = tog(s.mic), spkT = tog(s.spk);
+    const anyOn = s.cam || s.mic || s.spk;
+
+    this.applyAccent();
+
+    const titles = {
+      dashboard: ['Dashboard', 'Camera, microphone and speaker bridging over local Wi-Fi'],
+      network: ['Network', 'Discovery, transport policy and latency budget'],
+      settings: ['Settings', 'Driver integration and desktop preferences']
+    };
+    const [viewTitle, viewSub] = titles[s.view] || titles.dashboard;
+
+    if (!this.root) this.root = React.createRef();
+
+    return {
+      rootRef: this.root,
+      knob: dark ? '#0c0e12' : '#ffffff',
+      camDot: dot(s.cam), micDot: dot(s.mic), spkDot: dot(s.spk),
+      nsBorder: s.ns ? 'var(--accent)' : 'var(--border)',
+      nsBg: s.ns ? 'var(--accent-soft)' : 'var(--panel-2)',
+      nsFg: s.ns ? 'var(--fg)' : 'var(--fg-2)',
+      theme: this.theme(),
+      themeLabel: dark ? 'Dark' : 'Light',
+      toggleTheme: () => this.setState({ theme: dark ? 'light' : 'dark' }),
+      hostLabel: linux ? 'arch-desktop · Linux' : 'DESKTOP-K7 · Windows',
+      viewTitle, viewSub,
+      isDashboard: s.view === 'dashboard', isNetwork: s.view === 'network', isSettings: s.view === 'settings',
+      nav: [
+        { label: 'Dashboard', hint: '⌘1', go: set('view', 'dashboard') },
+        { label: 'Network', hint: '⌘2', go: set('view', 'network') },
+        { label: 'Settings', hint: '⌘3', go: set('view', 'settings') }
+      ],
+      camState: s.cam ? 'live' : 'off', micState: s.mic ? 'live' : 'off', spkState: s.spk ? 'live' : 'off',
+      backendTag: linux ? 'linux' : 'windows',
+      backendVideo: linux ? 'v4l2loopback → /dev/video0' : 'DirectShow filter (signed)',
+      backendAudioIn: linux ? 'PipeWire virtual-source' : 'WASAPI + APO virtual mic',
+      backendAudioOut: linux ? 'null-sink monitor capture' : 'WASAPI loopback capture',
+      toggleAll: () => this.setState({ cam: !anyOn, mic: !anyOn, spk: !anyOn }),
+      toggleAllLabel: anyOn ? 'Stop all streams' : 'Start all streams',
+
+      ping: s.ping, mbps: s.mbps.toFixed(1), mbpsPct: Math.min(100, s.mbps * 8) + '%',
+      loss: s.loss.toFixed(2), lossNote: s.loss < 0.3 ? 'Stable · no retransmit' : 'Minor jitter detected',
+      pingBars: (s.bars.length ? s.bars : Array.from({ length: 16 }, (_, i) => 30 + ((i * 17) % 60))).slice(0, 14).map(h => ({ h: h + '%' })),
+
+      toggleCam: () => this.setState({ cam: !s.cam }),
+      toggleMic: () => this.setState({ mic: !s.mic }),
+      toggleSpk: () => this.setState({ spk: !s.spk }),
+      toggleNs: () => this.setState({ ns: !s.ns }),
+      camTrackBg: camT.bg, camJustify: camT.justify,
+      micTrackBg: micT.bg, micJustify: micT.justify,
+      spkTrackBg: spkT.bg, spkJustify: spkT.justify,
+      camBadge: s.cam ? 'REC · ' + s.res + ' ' + s.fps + 'fps' : 'IDLE',
+      camSink: linux ? '/dev/video0' : 'Unified Stream Cam',
+      camLatency: 38 + (s.fps === '60' ? 0 : 9),
+      camChips: [
+        this.chip('720p', s.res === '720p', set('res', '720p')),
+        this.chip('1080p', s.res === '1080p', set('res', '1080p')),
+        this.chip('30 FPS', s.fps === '30', set('fps', '30')),
+        this.chip('60 FPS', s.fps === '60', set('fps', '60')),
+        this.chip(s.lens + ' lens', true, () => this.setState({ lens: s.lens === 'Rear' ? 'Front' : 'Rear' })),
+        this.chip('Flash', s.flash, () => this.setState({ flash: !s.flash }))
+      ].map(c => ({ ...c })),
+
+      micVisual: this.vu(s.mic, 44, 'var(--accent)'),
+      spkVisual: this.vu(s.spk, 44, 'var(--accent-2)'),
+      gain: s.gain, gainDb: (s.gain - 50 >= 0 ? '+' : '') + (s.gain - 50) / 2.5 + ' dB',
+      setGain: e => this.setState({ gain: +e.target.value }),
+      nsLabel: s.ns ? 'RNNoise on' : 'Off',
+      micSink: linux ? 'PipeWire source' : 'WASAPI virtual mic',
+      vol: s.vol, setVol: e => this.setState({ vol: +e.target.value }),
+      bufChips: ['20', '40', '80'].map(b => ({ ...this.chip(b + ' ms', s.buf === b, set('buf', b)) })),
+      spkSource: linux ? 'null-sink monitor' : 'loopback capture',
+
+      logs: [
+        { t: '00:14:02', tag: 'net', msg: 'mDNS: _ustream._udp resolved Pixel 8 Pro (192.168.1.24)' },
+        { t: '00:13:58', tag: 'video', msg: 'H.264 keyframe interval set to 2s · hardware encoder ok' },
+        { t: '00:13:57', tag: 'audio', msg: 'Opus 48kHz/20ms frames · virtual source registered' },
+        { t: '00:13:51', tag: 'ice', msg: 'Host candidate pair selected — direct LAN, no TURN' }
+      ],
+      devices: [
+        { name: 'Pixel 8 Pro', meta: 'android 15 · _ustream._udp.local', rtt: '12 ms', action: 'Connected', dot: 'var(--accent)' },
+        { name: 'Galaxy S23', meta: 'android 14 · idle', rtt: '18 ms', action: 'Connect', dot: 'var(--muted)' },
+        { name: 'Tab S9 (mic only)', meta: 'android 14 · paired', rtt: '24 ms', action: 'Connect', dot: 'var(--muted)' }
+      ],
+      transportRows: [
+        { label: 'Primary', value: 'WebRTC / SRTP over UDP' },
+        { label: 'Fallback', value: 'raw UDP socket (LAN)' },
+        { label: 'Discovery', value: 'mDNS · ZeroConf' },
+        { label: 'Congestion control', value: 'GCC, target 8 Mbps' },
+        { label: 'Encryption', value: 'DTLS-SRTP, pinned pairing key' }
+      ],
+      budget: [
+        { label: 'Capture + encode (phone)', ms: 14, pct: '28%' },
+        { label: 'Network (Wi-Fi 6, LAN)', ms: 8, pct: '16%' },
+        { label: 'Jitter buffer', ms: 10, pct: '20%' },
+        { label: 'Decode + virtual device', ms: 6, pct: '12%' }
+      ],
+      integrations: linux ? [
+        { name: 'v4l2loopback', detail: 'module loaded · /dev/video0 exclusive', status: 'Active', dot: 'var(--accent)' },
+        { name: 'PipeWire virtual source', detail: 'node 62 · Unified Stream Mic', status: 'Active', dot: 'var(--accent)' },
+        { name: 'null-sink monitor', detail: 'system audio → phone speaker', status: 'Idle', dot: 'var(--muted)' }
+      ] : [
+        { name: 'DirectShow camera filter', detail: 'signed COM filter, per-user install', status: 'Active', dot: 'var(--accent)' },
+        { name: 'Virtual mic (APO / WASAPI)', detail: 'requires one-time driver install', status: 'Active', dot: 'var(--accent)' },
+        { name: 'WASAPI loopback capture', detail: 'no driver needed · session mix', status: 'Idle', dot: 'var(--muted)' }
+      ],
+      prefs: [
+        { label: 'Launch at login', hint: 'start minimised to tray', ...tog(s.autostart), go: () => this.setState({ autostart: !s.autostart }) },
+        { label: 'Tray quick toggles', hint: 'cam / mic / speaker from tray', ...tog(s.tray), go: () => this.setState({ tray: !s.tray }) },
+        { label: 'Keep PC awake while streaming', hint: 'inhibit sleep', ...tog(s.wake), go: () => this.setState({ wake: !s.wake }) },
+        { label: 'Hardware decode', hint: 'VA-API / D3D11 when available', ...tog(s.hw), go: () => this.setState({ hw: !s.hw }) }
+      ]
+    };
+  }
+}
+
+const dcTemplate = document.querySelector('#dc-template');
+const dcRoot = document.querySelector('#app');
+const dcComponent = new Component({"theme":"dark","platform":"linux","accentColor":"#3fb8c9"});
+dcComponent.props = {"theme":"dark","platform":"linux","accentColor":"#3fb8c9"};
+
+function valueAt(scope, path) {
+  const clean = String(path).trim();
+  if (clean === 'true') return true;
+  if (clean === 'false') return false;
+  if (clean === 'null') return null;
+  return clean.split('.').reduce((value, key) => value == null ? undefined : value[key], scope);
+}
+
+function exactBinding(text) {
+  const match = String(text).match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
+  return match ? match[1] : null;
+}
+
+function interpolate(text, scope) {
+  return String(text).replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, path) => {
+    const value = valueAt(scope, path);
+    return value == null || typeof value === 'object' || typeof value === 'function' ? '' : String(value);
+  });
+}
+
+function expandDirectives(container, scope) {
+  let directive;
+  while ((directive = container.querySelector('sc-for, sc-if'))) {
+    if (directive.localName === 'sc-for') {
+      const list = valueAt(scope, exactBinding(directive.getAttribute('list')) || directive.getAttribute('list')) || [];
+      const alias = directive.getAttribute('as') || 'item';
+      const fragment = document.createDocumentFragment();
+      for (const item of list) {
+        const holder = document.createElement('template');
+        holder.innerHTML = directive.innerHTML;
+        expandDirectives(holder.content, { ...scope, [alias]: item });
+        bindTree(holder.content, { ...scope, [alias]: item });
+        fragment.append(holder.content);
+      }
+      directive.replaceWith(fragment);
+    } else {
+      const raw = directive.getAttribute('value');
+      const enabled = valueAt(scope, exactBinding(raw) || raw);
+      if (enabled) {
+        const fragment = document.createDocumentFragment();
+        while (directive.firstChild) fragment.append(directive.firstChild);
+        directive.replaceWith(fragment);
+      } else directive.remove();
+    }
+  }
+}
+
+function bindTree(container, scope) {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const binding = exactBinding(node.nodeValue);
+      if (binding) {
+        const value = valueAt(scope, binding);
+        if (value instanceof Node) node.replaceWith(value);
+        else node.nodeValue = value == null ? '' : String(value);
+      } else node.nodeValue = interpolate(node.nodeValue, scope);
+      continue;
+    }
+    for (const attribute of [...node.attributes]) {
+      const binding = exactBinding(attribute.value);
+      const value = binding ? valueAt(scope, binding) : undefined;
+      if (attribute.name === 'ref' && value && typeof value === 'object' && 'current' in value) {
+        value.current = node;
+        node.removeAttribute(attribute.name);
+      } else if (attribute.name.startsWith('on') && typeof value === 'function') {
+        node.removeAttribute(attribute.name);
+        node.addEventListener(attribute.name.slice(2), value);
+      } else {
+        node.setAttribute(attribute.name, binding && value != null && typeof value !== 'object' && typeof value !== 'function'
+          ? String(value)
+          : interpolate(attribute.value, scope));
+      }
+    }
+  }
+}
+
+window.__dcRender = () => {
+  const oldScroll = [...dcRoot.querySelectorAll('*')].map(node => [node.scrollTop, node.scrollLeft]);
+  const scope = dcComponent.renderVals();
+  const fragment = dcTemplate.content.cloneNode(true);
+  expandDirectives(fragment, scope);
+  bindTree(fragment, scope);
+  dcRoot.replaceChildren(fragment);
+  [...dcRoot.querySelectorAll('*')].forEach((node, index) => {
+    if (oldScroll[index]) [node.scrollTop, node.scrollLeft] = oldScroll[index];
+  });
+  dcComponent.componentDidUpdate?.();
+};
+
+window.__dcRender();
+dcComponent.componentDidMount?.();
+window.addEventListener('beforeunload', () => dcComponent.componentWillUnmount?.());
+</script>
+</body>
+</html>
