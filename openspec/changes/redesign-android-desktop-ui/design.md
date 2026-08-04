@@ -43,7 +43,7 @@ Creating new backend commands or duplicating backend state in per-screen stores 
 
 Desktop receives CSS custom properties for the documented dark/light roles, reusable glass panels, status lights, switches, telemetry values, audio meters, navigation rows, and responsive grids. Space Grotesk is the primary family and JetBrains Mono is used for technical values, with deterministic fallbacks when fonts cannot load.
 
-Android receives Material 3 light/dark color schemes, typography roles, tonal containers, stream cards, metric readouts, status rows, switches, segmented choices, and stable bottom navigation. Roboto remains the platform primary family and JetBrains Mono is used selectively for measurements.
+Android receives Material 3 light/dark color schemes, typography roles, tonal containers, stream cards, metric readouts, status rows, switches, segmented choices, and a consistent title bar with Back and Settings actions. Roboto remains the platform primary family and JetBrains Mono is used selectively for measurements.
 
 The platforms share status semantics—active/connected, secondary telemetry, warning, destructive/error—but do not share source components or force identical geometry. A cross-platform UI toolkit was rejected because it would add migration risk and weaken each reference design's platform character.
 
@@ -51,7 +51,7 @@ The platforms share status semantics—active/connected, secondary telemetry, wa
 
 Desktop web content fills the complete Tauri webview and uses a sidebar with switchable main views. Native operating-system/Tauri window decoration remains outside the web UI; the app does not draw a second title bar, rounded outer window frame, or presentation canvas. The primary workspace contains connection context, a four-metric telemetry strip, and camera/microphone/speaker controls. Network holds advertising, device identity, ports, link details, test-stream diagnostics, and related actions. Settings holds presentation preferences and other existing settings-level controls. At narrow widths, the sidebar collapses behind a navigation control and content grids reduce columns without shrinking text below usable sizes.
 
-Android uses Home, Camera, Devices, and Settings destinations. Home summarizes the connected host and the three streams. Camera gives preview and capture settings suitable priority. Devices owns discovery, manual address entry, and connection initiation. Settings owns preferences and session/device details. Bottom navigation stays stable on top-level destinations, while scroll state and active stream/session state survive destination changes.
+Android launches into Devices, which owns discovery, manual address entry, and connection initiation. Starting a connection advances to Home, which summarizes the connected host and the three streams. “Open camera controls” pushes Camera, giving preview and capture settings suitable priority. Settings is pushed from the title action on every screen. There is no bottom navigation. Every screen uses a title bar with Back and Settings; Back pops the previous screen, while Back from the root Devices screen exits through the normal Android activity behavior. Navigation history and active stream/session state remain independent, and returning from Settings restores the preceding screen.
 
 ### 5. Preserve functional parity through a control inventory
 
@@ -65,7 +65,7 @@ Animation is limited to state communication: connection pulse, discovery/recordi
 
 ### 7. Test at component, integration, and build levels
 
-Desktop tests cover destination changes, command invocation, event-driven state rendering, pairing availability, disconnected metric clearing, and responsive navigation behavior where practical. Android UI tests cover the four destinations, stream actions, discovery/manual-entry states, permission and error states, and semantic labels. Theme/token tests or focused snapshots may protect stable visual roles without relying on brittle full-page pixel snapshots.
+Desktop tests cover destination changes, command invocation, event-driven state rendering, pairing availability, disconnected metric clearing, and responsive navigation behavior where practical. Android UI tests cover title-bar Back/Settings actions, the Devices → Home → Camera navigation flow, Settings return behavior, stream actions, discovery/manual-entry states, permission and error states, and semantic labels. Theme/token tests or focused snapshots may protect stable visual roles without relying on brittle full-page pixel snapshots.
 
 Final verification runs all commands required by `CONTRIBUTING.md` and performs manual comparison against both light and dark reference examples at representative desktop and Android sizes.
 

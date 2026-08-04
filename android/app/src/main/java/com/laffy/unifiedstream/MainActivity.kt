@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -12,11 +13,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -58,12 +58,18 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-enum class AppDestination(val label: String, val symbol: String) {
-    HOME("Home", "●"),
-    CAMERA("Camera", "◉"),
-    DEVICES("Devices", "⌁"),
-    SETTINGS("Settings", "⚙"),
+enum class AppDestination(val label: String) {
+    HOME("Home"),
+    CAMERA("Camera"),
+    DEVICES("Devices"),
+    SETTINGS("Settings"),
 }
+
+fun pushDestination(stack: List<String>, destination: AppDestination): List<String> =
+    if (stack.lastOrNull() == destination.name) stack else stack + destination.name
+
+fun popDestination(stack: List<String>): List<String> =
+    if (stack.size > 1) stack.dropLast(1) else stack
 
 @Composable
 fun UnifiedStreamApp(
@@ -97,7 +103,18 @@ fun UnifiedStreamApp(
     val speakerMuted by viewModel.speakerMuted.collectAsStateWithLifecycle()
     val speakerVolume by viewModel.speakerVolume.collectAsStateWithLifecycle()
 
-    var destination by rememberSaveable { mutableStateOf(AppDestination.DEVICES) }
+    var backStack by rememberSaveable { mutableStateOf(listOf(AppDestination.DEVICES.name)) }
+    val destination = AppDestination.valueOf(backStack.last())
+
+    fun navigate(target: AppDestination) {
+        backStack = pushDestination(backStack, target)
+    }
+
+    fun navigateBack() {
+        if (backStack.size > 1) backStack = popDestination(backStack) else (context as? ComponentActivity)?.finish()
+    }
+
+    BackHandler { navigateBack() }
 
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -121,11 +138,11 @@ fun UnifiedStreamApp(
     LaunchedEffect(connection, cameraState is CameraStreamState.Active) {
         when (val state = connection) {
             is ConnectionState.Connected -> {
-                if (destination == AppDestination.DEVICES) destination = AppDestination.HOME
+                if (destination == AppDestination.DEVICES) navigate(AppDestination.HOME)
                 SessionService.start(context, state.peerName)
             }
             is ConnectionState.Connecting, is ConnectionState.Reconnecting -> {
-                if (destination == AppDestination.DEVICES) destination = AppDestination.HOME
+                if (destination == AppDestination.DEVICES) navigate(AppDestination.HOME)
             }
             is ConnectionState.Failed -> SessionService.stop(context)
             ConnectionState.Idle, ConnectionState.Discovering -> SessionService.stop(context)
@@ -178,20 +195,24 @@ fun UnifiedStreamApp(
     Scaffold(
         modifier = modifier,
         topBar = {
-            if (connection is ConnectionState.Failed) {
-                Surface(color = MaterialTheme.colorScheme.errorContainer) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        Text(
-                            text = (connection as ConnectionState.Failed).reason.display,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+            androidx.compose.foundation.layout.Column {
+                UnifiedTopBar(
+                    destination = destination,
+                    onBack = ::navigateBack,
+                    onSettings = { navigate(AppDestination.SETTINGS) },
+                )
+                if (connection is ConnectionState.Failed) {
+                    Surface(color = MaterialTheme.colorScheme.errorContainer) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                            Text(
+                                text = (connection as ConnectionState.Failed).reason.display,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                     }
                 }
             }
-        },
-        bottomBar = {
-            UnifiedBottomBar(destination = destination, onDestination = { destination = it })
         },
     ) { padding ->
         val contentModifier = Modifier.padding(padding)
@@ -202,8 +223,8 @@ fun UnifiedStreamApp(
                 mic = mic,
                 camera = camera,
                 speaker = speaker,
-                onOpenDevices = { destination = AppDestination.DEVICES },
-                onOpenCamera = { destination = AppDestination.CAMERA },
+                onOpenDevices = { navigate(AppDestination.DEVICES) },
+                onOpenCamera = { navigate(AppDestination.CAMERA) },
                 modifier = contentModifier,
             )
             AppDestination.CAMERA -> CameraDestination(connection, camera, contentModifier)
@@ -236,19 +257,30 @@ fun UnifiedStreamApp(
 }
 
 @Composable
-fun UnifiedBottomBar(
+fun UnifiedTopBar(
     destination: AppDestination,
-    onDestination: (AppDestination) -> Unit,
+    onBack: () -> Unit = {},
+    onSettings: () -> Unit = {},
 ) {
-    NavigationBar {
-        AppDestination.entries.forEach { item ->
-            NavigationBarItem(
-                selected = destination == item,
-                onClick = { onDestination(item) },
-                icon = { Text(item.symbol, modifier = Modifier.semantics { contentDescription = "${item.label} icon" }) },
-                label = { Text(item.label) },
-                modifier = Modifier.semantics { contentDescription = "${item.label} destination" },
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 2.dp) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            TextButton(
+                onClick = onBack,
+                modifier = Modifier.semantics { contentDescription = "Back" },
+            ) { Text("‹ Back") }
+            Text(
+                text = destination.label,
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
             )
+            TextButton(
+                onClick = onSettings,
+                enabled = destination != AppDestination.SETTINGS,
+                modifier = Modifier.semantics { contentDescription = "Open settings" },
+            ) { Text("Settings") }
         }
     }
 }

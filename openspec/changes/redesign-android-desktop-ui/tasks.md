@@ -24,7 +24,7 @@
 
 - [x] 4.1 Implement the complete Material 3 light/dark color schemes, Roboto and JetBrains Mono typography roles, tonal elevation, shapes, spacing, system-bar treatment, status colors, and state-driven motion from `design/Android.DESIGN.md`.
 - [x] 4.2 Extract reusable Compose components for app bars, device/session summaries, stream cards, metric values, level meters, switches, segmented choices, notices, search/manual-entry fields, and loading/error/permission states with accessibility semantics.
-- [x] 4.3 Add a stable Home, Camera, Devices, and Settings navigation shell with bottom navigation, correct selected state, system inset handling, preserved scroll/destination state, and top-level collection of existing ViewModel flows.
+- [x] 4.3 Replace Android bottom navigation with a stack-based Devices → Home → Camera flow and a consistent title bar exposing Back and Settings on every screen, preserving history, system insets, screen state, and top-level ViewModel collection.
 - [x] 4.4 Ensure Android screens scroll and reflow for supported small screens, orientation/inset changes, and enlarged text without clipped actions, obscured final content, distorted preview, or undersized touch targets.
 
 ## 5. Android Destinations and Behavior Parity
@@ -38,7 +38,7 @@
 ## 6. Automated UI Verification
 
 - [x] 6.1 Add desktop tests for navigation, theme switching, keyboard focus, pairing availability, all existing command actions, event-driven stream/error rendering, live telemetry updates, and metric clearing on disconnect.
-- [x] 6.2 Add Android Compose/UI tests for all four destinations, bottom-navigation semantics, discovery/manual-entry states, camera controls, microphone and speaker controls, permission/refusal/error states, and connection-state continuity across navigation.
+- [x] 6.2 Add Android Compose/UI tests for title-bar Back/Settings semantics, Devices → Home → Camera navigation, Settings return behavior, all four screens, discovery/manual-entry states, camera controls, microphone and speaker controls, permission/refusal/error states, and connection-state continuity across navigation.
 - [x] 6.3 Add focused responsive checks for wide and narrow desktop layouts and Android checks with enlarged text, ensuring all controls remain reachable and content is not hidden.
 - [x] 6.4 Verify accessible names, roles, selected/checked/enabled states, visible desktop focus, non-color status cues, minimum targets, and reduced-motion behavior on both clients.
 

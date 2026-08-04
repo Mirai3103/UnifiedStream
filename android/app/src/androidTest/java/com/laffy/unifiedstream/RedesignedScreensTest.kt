@@ -1,6 +1,5 @@
 package com.laffy.unifiedstream
 
-import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -26,17 +25,26 @@ class RedesignedScreensTest {
     val compose = createComposeRule()
 
     @Test
-    fun bottomNavigation_exposesFourDestinationsAndSelection() {
-        var selected = AppDestination.HOME
+    fun titleBar_exposesBackAndSettingsActions() {
+        var backPressed = false
+        var settingsPressed = false
         compose.setContent {
             UnifiedStreamTheme {
-                UnifiedBottomBar(selected) { selected = it }
+                UnifiedTopBar(
+                    destination = AppDestination.CAMERA,
+                    onBack = { backPressed = true },
+                    onSettings = { settingsPressed = true },
+                )
             }
         }
 
-        compose.onNodeWithContentDescription("Home destination").assertIsSelected()
-        compose.onNodeWithContentDescription("Camera destination").performClick()
-        compose.runOnIdle { assertEquals(AppDestination.CAMERA, selected) }
+        compose.onNodeWithText("Camera").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithContentDescription("Open settings").performClick()
+        compose.runOnIdle {
+            assertEquals(true, backPressed)
+            assertEquals(true, settingsPressed)
+        }
     }
 
     @Test
@@ -72,7 +80,6 @@ class RedesignedScreensTest {
             }
         }
 
-        compose.onNodeWithText("Viewfinder").assertIsDisplayed()
         compose.onNodeWithText("Camera permission is required.").assertIsDisplayed()
         compose.onNodeWithText("720p").assertIsDisplayed()
     }

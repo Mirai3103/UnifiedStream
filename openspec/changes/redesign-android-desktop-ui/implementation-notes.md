@@ -29,6 +29,8 @@ The stable activity collects identity, discovery devices/state/manual fallback/e
 
 Connection and media state are not destination-local. Discovery runs while Devices is selected. Navigating or changing theme does not invoke media/session callbacks.
 
+Android navigation is stack-based with no bottom bar. The app launches at Devices; starting a connection pushes Home; “Open camera controls” pushes Camera; Settings is available from every title bar; Back restores the previous screen and exits normally from the root Devices screen.
+
 ### Prototype-only content policy
 
 Static example values, unavailable battery data, backend selection, unsupported frame-rate controls, notifications preferences, and other controls without an existing runtime contract are not fabricated. They are omitted or shown only as clearly unavailable explanatory copy. Existing diagnostics absent from the prototypes remain available in Network (desktop) or Settings (Android).
@@ -53,7 +55,7 @@ Android uses the platform-bundled Roboto family and platform monospace through C
 - Android JVM unit tests, debug APK assembly, and Compose instrumentation-test APK compilation passed.
 - Rust formatting, warning-denied Clippy, and all workspace tests passed (263 tests across unit and integration targets).
 - Desktop responsive rules cover full-webview wide, compact-navigation, two-column, stacked, and single-column breakpoints; controls use visible `:focus-visible` styling and reduced-motion CSS.
-- Android destinations use scrolling content, scaffold insets, Material minimum targets, explicit navigation/control semantics, non-color state text, and system-aware Compose animation.
+- Android screens use scrolling content, scaffold/title-bar insets, Material minimum targets, explicit Back/Settings and control semantics, non-color state text, and system-aware Compose animation.
 
 ## Manual verification still required
 

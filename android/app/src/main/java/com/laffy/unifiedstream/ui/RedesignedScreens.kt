@@ -87,15 +87,6 @@ private fun DestinationList(
 }
 
 @Composable
-private fun ScreenHeading(eyebrow: String, title: String, supporting: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-        Text(title, style = MaterialTheme.typography.headlineLarge)
-        Text(supporting, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
 private fun TonalCard(
     title: String,
     modifier: Modifier = Modifier,
@@ -193,7 +184,6 @@ fun HomeDestination(
     modifier: Modifier = Modifier,
 ) {
     DestinationList(modifier) {
-        item { ScreenHeading("UnifiedStream", "Your streams", "A calm control surface for the media bridge on your local network.") }
         item {
             Card(shape = RoundedCornerShape(26.dp), colors = CardDefaults.cardColors(containerColor = if (connection.isConnected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer)) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -226,7 +216,6 @@ fun CameraDestination(
 ) {
     val active = camera.state is CameraStreamState.Active
     DestinationList(modifier) {
-        item { ScreenHeading("Camera", "Viewfinder", "Frame the shot and control the video sent to your PC.") }
         item {
             Card(shape = RoundedCornerShape(26.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF0A0D0D))) {
                 Column {
@@ -340,7 +329,6 @@ fun DevicesDestination(
     var port by remember { mutableStateOf("47810") }
     val filtered = devices.filter { it.name.contains(query, ignoreCase = true) || it.host.contains(query, ignoreCase = true) }
     DestinationList(modifier) {
-        item { ScreenHeading("Devices", "Nearby computers", "Find UnifiedStream on this trusted local network or connect by address.") }
         item { OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("Search devices") }, singleLine = true, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Search nearby computers" }) }
         item {
             when (discoveryState) {
@@ -413,7 +401,6 @@ fun SettingsDestination(
     var frame by remember { mutableStateOf("4096") }
     val frameBytes = frame.toIntOrNull() ?: 0
     DestinationList(modifier) {
-        item { ScreenHeading("Settings", "App & session", "Appearance, device identity, and transport diagnostics.") }
         item {
             TonalCard("Appearance") {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {

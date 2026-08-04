@@ -9,7 +9,7 @@ The Android and desktop clients SHALL implement the visual roles, typography hie
 
 #### Scenario: Android renders the Material companion design
 - **WHEN** the Android client opens on a supported phone
-- **THEN** it presents the documented Material 3 tonal surfaces, rounded control groups, stable bottom navigation, stream cards, and mobile typography roles
+- **THEN** it presents the documented Material 3 tonal surfaces, rounded control groups, title navigation, stream cards, and mobile typography roles without a bottom navigation bar
 
 #### Scenario: Presentation-board decoration is excluded
 - **WHEN** either shipped client renders its interface
@@ -29,9 +29,17 @@ Both clients SHALL provide complete light and dark presentations using the seman
 ### Requirement: Stable platform navigation
 The redesign SHALL organize content into explicit platform-appropriate destinations while retaining connection and stream state independently from navigation.
 
-#### Scenario: Android top-level destinations
-- **WHEN** the user navigates among Home, Camera, Devices, and Settings
-- **THEN** the selected destination changes while the current session, stream lifecycles, and collected ViewModel state continue unchanged
+#### Scenario: Android launch and connection flow
+- **WHEN** the Android client launches and the user starts connecting to a device
+- **THEN** the client initially shows Devices and then advances to Home without displaying a bottom navigation bar
+
+#### Scenario: Android camera flow
+- **WHEN** the user selects “Open camera controls” from Home
+- **THEN** the client pushes Camera and Back returns to Home without changing the camera stream
+
+#### Scenario: Android title navigation
+- **WHEN** any Android screen is displayed
+- **THEN** its title bar exposes Back and Settings actions, Settings opens above the current screen, and Back restores the previous screen or exits normally from the root Devices screen
 
 #### Scenario: Desktop workspace navigation
 - **WHEN** the user navigates among the desktop workspace, network, and settings views
@@ -80,7 +88,7 @@ The desktop client SHALL reflow from the documented wide workspace to narrower l
 
 #### Scenario: Scrollable Android content
 - **WHEN** an Android destination does not fit vertically because of screen size, system insets, or font scaling
-- **THEN** content scrolls while primary controls remain usable and bottom navigation does not obscure the final content
+- **THEN** content scrolls below the title bar while primary controls remain usable and final content is not obscured
 
 #### Scenario: Camera content adapts
 - **WHEN** camera controls render at a constrained width
