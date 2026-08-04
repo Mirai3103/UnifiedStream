@@ -42,6 +42,7 @@ Android uses the platform-bundled Roboto family and platform monospace through C
 ## Intentional reference adaptations
 
 - HTML presentation boards and fake device frames are documentation only.
+- Following design clarification, the desktop runtime fills the Tauri webview and explicitly excludes the example's simulated title bar, traffic-light controls, fixed rounded outer frame, presentation border/shadow, and surrounding canvas.
 - Real backend states, errors, ports, capabilities, and controls replace illustrative values.
 - Layout geometry reflows when needed for keyboard access, font scaling, system insets, and minimum targets.
 
@@ -51,7 +52,7 @@ Android uses the platform-bundled Roboto family and platform monospace through C
 - Desktop frozen install, five Vitest integration tests, TypeScript compilation, and Vite production build passed.
 - Android JVM unit tests, debug APK assembly, and Compose instrumentation-test APK compilation passed.
 - Rust formatting, warning-denied Clippy, and all workspace tests passed (263 tests across unit and integration targets).
-- Desktop responsive rules cover 1420px-wide, compact-navigation, two-column, stacked, and single-column breakpoints; controls use visible `:focus-visible` styling and reduced-motion CSS.
+- Desktop responsive rules cover full-webview wide, compact-navigation, two-column, stacked, and single-column breakpoints; controls use visible `:focus-visible` styling and reduced-motion CSS.
 - Android destinations use scrolling content, scaffold insets, Material minimum targets, explicit navigation/control semantics, non-color state text, and system-aware Compose animation.
 
 ## Manual verification still required

@@ -21,13 +21,13 @@ The redesign crosses two UI stacks but must not disturb the Rust/Tauri command a
 - Adding functionality that appears only as illustrative content in the static HTML examples but has no existing product contract or backend support.
 - Replacing React/Tauri or Jetpack Compose, or sharing a lowest-common-denominator component library between platforms.
 - Reworking camera encoding performance or the archived camera quality-autotune follow-ups.
-- Reproducing the presentation-board frames or surrounding canvas from the HTML examples inside the shipped applications.
+- Reproducing presentation wrappers from the HTML examples inside the shipped applications, including simulated desktop title bars/window borders and Android phone frames or surrounding canvases.
 
 ## Decisions
 
 ### 1. Treat the design references as a hierarchy, not generated source
 
-`Android.DESIGN.md` and `Desktop.DESIGN.md` define the normative colors, typography, component language, layout principles, and responsive intent. The corresponding HTML files define concrete composition and visual examples. Existing application behavior and OpenSpec capabilities remain authoritative when illustrative HTML content conflicts with real states or controls.
+`Android.DESIGN.md` and `Desktop.DESIGN.md` define the normative colors, typography, component language, layout principles, and responsive intent. The corresponding HTML files define concrete composition and visual examples, but their presentation wrappers are not application content. On desktop, the outer 28-pixel canvas, fixed 1420-by-880 rounded frame, simulated title bar/traffic-light controls, surrounding border, and presentation shadow are mock-device documentation. On Android, the board heading, surrounding canvas, labels, and imported phone frames serve the same documentation-only role. Existing application behavior and OpenSpec capabilities remain authoritative when illustrative HTML content conflicts with real states or controls.
 
 This avoids copying a static prototype that cannot represent live backend behavior. The alternative—embedding or mechanically translating the HTML—would bypass the existing React and Compose state architecture and create inaccessible, difficult-to-maintain markup.
 
@@ -49,7 +49,7 @@ The platforms share status semantics—active/connected, secondary telemetry, wa
 
 ### 4. Use explicit information architecture
 
-Desktop uses a persistent shell with top chrome, a sidebar, and switchable main views. The primary workspace contains connection context, a four-metric telemetry strip, and camera/microphone/speaker controls. Network holds advertising, device identity, ports, link details, test-stream diagnostics, and related actions. Settings holds presentation preferences and other existing settings-level controls. At narrow widths, the sidebar collapses behind a navigation control and content grids reduce columns without shrinking text below usable sizes.
+Desktop web content fills the complete Tauri webview and uses a sidebar with switchable main views. Native operating-system/Tauri window decoration remains outside the web UI; the app does not draw a second title bar, rounded outer window frame, or presentation canvas. The primary workspace contains connection context, a four-metric telemetry strip, and camera/microphone/speaker controls. Network holds advertising, device identity, ports, link details, test-stream diagnostics, and related actions. Settings holds presentation preferences and other existing settings-level controls. At narrow widths, the sidebar collapses behind a navigation control and content grids reduce columns without shrinking text below usable sizes.
 
 Android uses Home, Camera, Devices, and Settings destinations. Home summarizes the connected host and the three streams. Camera gives preview and capture settings suitable priority. Devices owns discovery, manual address entry, and connection initiation. Settings owns preferences and session/device details. Bottom navigation stays stable on top-level destinations, while scroll state and active stream/session state survive destination changes.
 

@@ -39,6 +39,17 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("desktop application shell", () => {
+  it("fills the webview without rendering the presentation window mock", async () => {
+    const { container } = render(<App />);
+    await screen.findByText("Media bridge");
+
+    expect(container.firstElementChild).toHaveClass("app-layout");
+    expect(container.querySelector(".desktop-stage")).toBeNull();
+    expect(container.querySelector(".app-window")).toBeNull();
+    expect(container.querySelector(".window-chrome")).toBeNull();
+    expect(container.querySelector(".traffic-lights")).toBeNull();
+  });
+
   it("navigates without invoking a backend command", async () => {
     render(<App />);
     await screen.findByText("Media bridge");

@@ -258,15 +258,7 @@ function App() {
   const peerName = state.state === "connected" || state.state === "connecting" || state.state === "reconnecting" ? state.peer_name : null;
 
   return (
-    <main className="desktop-stage">
-      <section className="app-window">
-        <header className="window-chrome">
-          <div className="traffic-lights" aria-hidden="true"><span /><span /><span /></div>
-          <span className="chrome-title">UnifiedStream <span className="mono">v0.1.0</span></span>
-          <StatusLight active={connected} label={connected ? "Host online" : "Waiting"} />
-        </header>
-
-        <div className="app-layout">
+    <main className="app-layout">
           <aside className="sidebar">
             <div className="brand-mark" aria-label="UnifiedStream home">US</div>
             <nav aria-label="Primary navigation">
@@ -381,8 +373,6 @@ function App() {
               </div>
             )}
           </div>
-        </div>
-      </section>
     </main>
   );
 }

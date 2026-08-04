@@ -4,7 +4,8 @@ The current Android and desktop interfaces expose the MVP functionality but do n
 
 ## What Changes
 
-- Redesign the desktop client as a compact, responsive streaming-console workspace with window chrome, sidebar navigation, telemetry summaries, and dedicated workspace, network, and settings views based on `design/Desktop.DESIGN.md` and `design/Desktop.html`.
+- Redesign the desktop client as a compact, responsive streaming-console workspace with sidebar navigation, telemetry summaries, and dedicated workspace, network, and settings views based on the in-app content shown in `design/Desktop.DESIGN.md` and `design/Desktop.html`.
+- Treat the desktop example's outer canvas, simulated title bar and traffic-light controls, fixed rounded window frame, border, and presentation shadow as mock-device documentation that MUST NOT be reproduced inside the Tauri webview.
 - Redesign the Android client as a Material 3 companion application with Home, Camera, Devices, and Settings destinations based on `design/Android.DESIGN.md` and `design/Android.html`.
 - Introduce the specified dark and light color roles, typography, spacing, surfaces, controls, status indicators, and restrained state-driven motion on each platform.
 - Preserve every existing connection, pairing, discovery, camera, microphone, speaker, synthetic-test-stream, error, and telemetry action and state while relocating them into the new information architecture.

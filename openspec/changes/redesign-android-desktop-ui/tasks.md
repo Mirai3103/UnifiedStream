@@ -9,7 +9,7 @@
 
 - [x] 2.1 Refactor the desktop frontend into a stable application shell plus reusable navigation, status, telemetry, media-control, form, dialog/banner, and audio-meter components while keeping Tauri subscriptions and command invocation centralized.
 - [x] 2.2 Implement semantic desktop light/dark tokens, Space Grotesk and JetBrains Mono typography roles, glass surfaces, borders, status colors, control states, spacing, focus styles, and reduced-motion behavior from `design/Desktop.DESIGN.md`.
-- [x] 2.3 Build the desktop top chrome and sidebar navigation with explicit selected state, keyboard operation, device/backend context, theme control, and compact/drawer behavior at narrow widths.
+- [x] 2.3 Make desktop web content fill the Tauri webview without simulated title-bar or outer-window mock decoration, and build sidebar navigation with explicit selected state, keyboard operation, device/backend context, theme control, and compact/drawer behavior at narrow widths.
 - [x] 2.4 Implement responsive desktop layout primitives for the wide four-column telemetry strip, primary media workspace, two-column secondary views, stacked narrow layouts, and camera-preview reflow without reducing required control sizes.
 
 ## 3. Desktop Views and Behavior Parity
@@ -44,7 +44,7 @@
 
 ## 7. Visual and End-to-End Verification
 
-- [ ] 7.1 Compare desktop dark and light modes at representative wide and narrow sizes against `design/Desktop.DESIGN.md` and `design/Desktop.html`, recording intentional deviations required for real behavior or accessibility.
+- [ ] 7.1 Compare desktop dark and light modes at representative wide and narrow sizes against only the in-app content of `design/Desktop.DESIGN.md` and `design/Desktop.html`, confirming the mock canvas, simulated title bar, traffic-light controls, and outer window frame are absent and recording intentional deviations required for real behavior or accessibility.
 - [ ] 7.2 Compare Android Home, Camera, Devices, and Settings in dark and light modes on a physical or representative emulated device against `design/Android.DESIGN.md` and `design/Android.html`.
 - [ ] 7.3 Manually exercise discovery, manual connection, pairing accept/reject/timeout, reconnect, disconnect, camera preview/control, microphone controls, speaker controls, telemetry, test stream, permission denial, and backend-unavailable guidance through the redesigned interfaces.
 - [ ] 7.4 Confirm active streams continue unchanged while navigating and switching theme, global prompts remain actionable, and stale session/stream metrics clear when their owner stops.

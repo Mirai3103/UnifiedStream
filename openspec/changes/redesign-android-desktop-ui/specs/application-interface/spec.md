@@ -5,7 +5,7 @@ The Android and desktop clients SHALL implement the visual roles, typography hie
 
 #### Scenario: Desktop renders the streaming-console design
 - **WHEN** the desktop client opens at a supported wide window size
-- **THEN** it presents the documented window chrome, navigation sidebar, telemetry hierarchy, glass-panel workspace, and media controls using the desktop color and typography roles
+- **THEN** its web content fills the Tauri webview and presents the documented navigation sidebar, telemetry hierarchy, glass-panel workspace, and media controls using the desktop color and typography roles
 
 #### Scenario: Android renders the Material companion design
 - **WHEN** the Android client opens on a supported phone
@@ -13,7 +13,7 @@ The Android and desktop clients SHALL implement the visual roles, typography hie
 
 #### Scenario: Presentation-board decoration is excluded
 - **WHEN** either shipped client renders its interface
-- **THEN** documentation-only device frames, board labels, and surrounding prototype canvas are not rendered as application content
+- **THEN** documentation-only device frames, board labels, surrounding prototype canvas, simulated desktop title bar/traffic-light controls, rounded outer window border, and presentation shadow are not rendered as application content
 
 ### Requirement: Light and dark themes
 Both clients SHALL provide complete light and dark presentations using the semantic roles in their platform reference, and all text, controls, status indicators, previews, and telemetry values MUST remain legible and operable in both themes.
