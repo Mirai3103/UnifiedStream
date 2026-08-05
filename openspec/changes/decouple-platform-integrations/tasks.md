@@ -36,12 +36,12 @@
 
 - [x] 5.1 Convert the `rust` job in `.github/workflows/quality.yml` to a matrix over `ubuntu-24.04` and `windows-latest`; keep format, Clippy, and tests on the Linux leg, and run `cargo check --workspace` plus the same Clippy invocation on the Windows leg
 - [x] 5.2 Update `CONTRIBUTING.md` with the non-Linux verification command and note which checks are expected to be unrunnable on a Linux workstation
-- [ ] 5.3 After the workflow has run once on the pull request, add the new Windows check to the required checks in branch protection
+- [x] 5.3 After the workflow has run once on the pull request, add the new Windows check to the required checks in branch protection
 - [x] 5.4 Add `docs/design.windows.md` recording the Windows architecture decisions, and link it from the development section of `README.md`
 
 ## 6. Verification
 
-- [ ] 6.1 `cargo fmt --all -- --check`, `cargo clippy --workspace --lib --bins -- -D warnings`, and `cargo test --workspace` pass on Linux with no new warnings
+- [x] 6.1 `cargo fmt --all -- --check`, `cargo clippy --workspace --lib --bins -- -D warnings`, and `cargo test --workspace` pass on Linux with no new warnings
 - [x] 6.2 `cargo check --workspace` and Clippy pass for `x86_64-pc-windows-msvc` on the Windows runner
 - [ ] 6.3 Manual Linux regression on CachyOS: camera to a v4l2 device with correct fps and device path shown; the `modprobe` hint appears verbatim with the module unloaded; microphone visible as a PipeWire source with a live level meter; speaker with the routing toggle, including default-output restore after a forced kill and the stale-takeover sweep on the next launch
 - [ ] 6.4 Manual Windows smoke run of the produced binary: the app starts, advertises, pairs with the phone, connects, and reports telemetry, and each of the three toggles fails with a visible unsupported message rather than crashing or appearing to succeed
