@@ -76,14 +76,25 @@ export interface VideoParams {
   max_fps: number;
 }
 
+/**
+ * Setup guidance supplied by the backend's platform implementation.
+ *
+ * The interface renders both fields without knowing which platform produced them: `message`
+ * always, `command` copyable only when the platform named one that resolves the failure.
+ */
+export interface SetupHint {
+  message: string;
+  command: string | null;
+}
+
 export interface CameraStatus {
   active: boolean;
   error: string | null;
-  /** The command that fixes a missing v4l2loopback module, when that was the failure. */
-  hint: string | null;
-  params: VideoParams | null;
-  /** Device node the virtual camera writes to, e.g. /dev/video10. */
+  /** Platform-supplied guidance for the last failure, when the platform supplied any. */
+  hint: SetupHint | null;
+  /** Opaque platform label for the device being written to. Never parsed here. */
   device: string | null;
+  params: VideoParams | null;
 }
 
 /** Delivered-frame counters, 1 Hz while the camera stream is active. */
@@ -98,7 +109,11 @@ export interface SpeakerStatus {
   active: boolean;
   starting: boolean;
   muted: boolean;
-  routed: boolean;
+  /**
+   * Whether the system output is routed to the virtual sink, or `null` where the platform has
+   * no routing concept. `null` is absence, not "off": the control is omitted entirely.
+   */
+  routed: boolean | null;
   error: string | null;
   params: AudioParams | null;
 }

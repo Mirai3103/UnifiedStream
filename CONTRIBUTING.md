@@ -27,12 +27,24 @@ openspec validate --all
 (cd desktop/src-tauri && cargo clippy --workspace --lib --bins -- -D warnings)
 (cd desktop/src-tauri && cargo test --workspace)
 
+# Non-Linux compilation, on a Windows workstation (see the note below)
+(cd desktop/src-tauri && cargo check --workspace)
+(cd desktop/src-tauri && cargo clippy --workspace --lib --bins -- -D warnings)
+
 # Android (requires JDK 17)
 (cd android && ./gradlew testDebugUnitTest assembleDebug)
 
 # Frontend (requires Bun 1.3.14)
 (cd desktop && bun install --frozen-lockfile && bun run build)
 ```
+
+The Rust area is verified on two platforms and reports one check per platform, so a Linux
+workstation cannot run the whole set. `cargo check` and Clippy for a non-Linux target are
+expected to be unrunnable there: `tauri-build` does host-side work for a Windows target, so
+cross-checking from Linux fails for toolchain reasons rather than code reasons. Leave that leg
+to CI's `rust (windows-latest)` check, or run it on a Windows machine. The reverse also holds —
+a Windows workstation cannot run `cargo test --workspace`, whose integration tests need PipeWire
+and v4l2 loopback.
 
 Record the commands you ran in the pull-request template. Explain any relevant check you could not run locally.
 
@@ -47,4 +59,4 @@ gh pr create --base main --fill
 
 The GitHub web interface may be used instead of `gh`. Link the OpenSpec change when applicable, keep the pull request scoped, and address review feedback on the same branch.
 
-Merge only through GitHub after the required `openspec`, `rust`, `android`, and `frontend` checks pass. Do not bypass branch protection for normal development.
+Merge only through GitHub after the required `openspec`, `rust (ubuntu-24.04)`, `rust (windows-latest)`, `android`, and `frontend` checks pass. Do not bypass branch protection for normal development.

@@ -39,7 +39,9 @@ const IDLE_SPEAKER: SpeakerStatus = {
   active: false,
   starting: false,
   muted: false,
-  routed: false,
+  // Absent until the backend says otherwise: a control is only ever added by a platform that
+  // reports the capability, never assumed before the first status arrives.
+  routed: null,
   error: null,
   params: null,
 };
@@ -48,8 +50,8 @@ const IDLE_CAMERA: CameraStatus = {
   active: false,
   error: null,
   hint: null,
-  params: null,
   device: null,
+  params: null,
 };
 
 function StatusLight({ active, label }: { active: boolean; label: string }) {
@@ -327,16 +329,19 @@ function App() {
                         <span>{camera.params ? `${camera.params.width} × ${camera.params.height} · ${camera.params.codec.toUpperCase()}` : "MJPEG virtual camera"}</span>
                       </div>
                       <div className="control-stack">
-                        <div className="control-row"><div><strong>Phone camera</strong><span>{camera.device ?? "Streams to a v4l2loopback device"}</span></div><SwitchControl label="Phone camera" checked={camera.active} disabled={!connected || cameraPending} onChange={() => void toggleCamera()} /></div>
+                        <div className="control-row"><div><strong>Phone camera</strong><span>{camera.device ?? "Streams to a virtual camera device"}</span></div><SwitchControl label="Phone camera" checked={camera.active} disabled={!connected || cameraPending} onChange={() => void toggleCamera()} /></div>
                         <dl className="detail-grid"><div><dt>Delivered</dt><dd>{camera.active ? `${cameraStats?.fps ?? 0} fps` : "—"}</dd></div><div><dt>Frames</dt><dd>{cameraStats?.frames_written ?? "—"}</dd></div><div><dt>Decode failures</dt><dd>{cameraStats?.decode_failures ?? "—"}</dd></div></dl>
                         {camera.error && <p className="error-copy" role="alert">{camera.error}</p>}
-                        {camera.hint && <div className="hint-box"><code>{camera.hint}</code><button onClick={() => void navigator.clipboard.writeText(camera.hint ?? "")}>Copy</button></div>}
+                        {/* The message always reaches the user through the error line above, which the
+                            backend renders from this same hint. The box adds the copyable command, so a
+                            platform that supplies none produces no box rather than an empty one. */}
+                        {camera.hint?.command && <div className="hint-box"><code>{camera.hint.command}</code><button onClick={() => void navigator.clipboard.writeText(camera.hint?.command ?? "")}>Copy</button></div>}
                       </div>
                     </div>
                   </Panel>
 
                   <Panel title="Microphone" eyebrow="Audio input" trailing={<StatusLight active={mic.active} label={mic.active ? "Live" : micPending ? "Starting" : "Off"} />}>
-                    <div className="control-row"><div><strong>Phone microphone</strong><span>{mic.active ? `${mic.params?.codec ?? "audio"} · ${(mic.params?.sample_rate ?? 48000) / 1000} kHz` : "Virtual PipeWire source"}</span></div><SwitchControl label="Phone microphone" checked={mic.active} disabled={!connected || micPending} onChange={() => void toggleMic()} /></div>
+                    <div className="control-row"><div><strong>Phone microphone</strong><span>{mic.active ? `${mic.params?.codec ?? "audio"} · ${(mic.params?.sample_rate ?? 48000) / 1000} kHz` : "Streams to a virtual microphone device"}</span></div><SwitchControl label="Phone microphone" checked={mic.active} disabled={!connected || micPending} onChange={() => void toggleMic()} /></div>
                     <LevelMeter level={mic.active ? micLevel : { rms: 0, peak: 0 }} label="Microphone level" />
                     {mic.error && <p className="error-copy" role="alert">{mic.error}</p>}
                   </Panel>
@@ -344,7 +349,7 @@ function App() {
                   <Panel title="Speaker" eyebrow="Audio output" trailing={<StatusLight active={speaker.active} label={speaker.active ? "Live" : speaker.starting ? "Starting" : "Off"} />}>
                     <div className="control-row"><div><strong>Wireless speaker</strong><span>{speaker.active ? `${speaker.params?.codec ?? "audio"} · ${speaker.params?.channels === 2 ? "stereo" : "mono"}` : "Send PC audio to the phone"}</span></div><SwitchControl label="Wireless speaker" checked={speaker.active || speaker.starting} disabled={!connected || speaker.starting} onChange={() => void run("set_speaker_enabled", { enabled: !(speaker.active || speaker.starting) })} /></div>
                     <LevelMeter level={speaker.active ? speakerLevel : { rms: 0, peak: 0 }} label="Speaker level" violet />
-                    {speaker.active && <><div className="control-row compact"><div><strong>Route system audio</strong><span>Restore previous output when stopped</span></div><SwitchControl label="Route system audio" checked={speaker.routed} onChange={() => void run("set_speaker_routing", { enabled: !speaker.routed })} /></div><button onClick={() => void run("set_speaker_muted", { muted: !speaker.muted })}>{speaker.muted ? "Unmute" : "Mute"}</button></>}
+                    {speaker.active && <>{speaker.routed !== null && <div className="control-row compact"><div><strong>Route system audio</strong><span>Restore previous output when stopped</span></div><SwitchControl label="Route system audio" checked={speaker.routed} onChange={() => void run("set_speaker_routing", { enabled: !speaker.routed })} /></div>}<button onClick={() => void run("set_speaker_muted", { muted: !speaker.muted })}>{speaker.muted ? "Unmute" : "Mute"}</button></>}
                     {speaker.error && <p className="error-copy" role="alert">{speaker.error}</p>}
                   </Panel>
                 </div>
@@ -377,7 +382,7 @@ function App() {
                 <Panel title="Theme" eyebrow="Interface">
                   <div className="theme-options" role="radiogroup" aria-label="Theme"><button role="radio" aria-checked={theme === "dark"} className={theme === "dark" ? "is-selected" : ""} onClick={() => setTheme("dark")}><span className="theme-swatch dark-swatch"><Moon size={16} aria-hidden="true" /></span>Dark</button><button role="radio" aria-checked={theme === "light"} className={theme === "light" ? "is-selected" : ""} onClick={() => setTheme("light")}><span className="theme-swatch light-swatch"><Sun size={16} aria-hidden="true" /></span>Light</button></div>
                 </Panel>
-                <Panel title="Runtime contract" eyebrow="About"><p className="body-copy">The redesign uses the existing discovery, session, media, and telemetry backend. Illustrative design controls without runtime support are intentionally not interactive.</p><dl className="detail-grid"><div><dt>Version</dt><dd className="mono">0.1.0</dd></div><div><dt>Desktop backend</dt><dd>PipeWire · v4l2loopback</dd></div><div><dt>Protocol</dt><dd>Trusted LAN</dd></div></dl></Panel>
+                <Panel title="Runtime contract" eyebrow="About"><p className="body-copy">The redesign uses the existing discovery, session, media, and telemetry backend. Illustrative design controls without runtime support are intentionally not interactive.</p><dl className="detail-grid"><div><dt>Version</dt><dd className="mono">0.1.0</dd></div><div><dt>Desktop backend</dt><dd>Platform virtual devices</dd></div><div><dt>Protocol</dt><dd>Trusted LAN</dd></div></dl></Panel>
               </div>
             )}
           </div>

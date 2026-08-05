@@ -805,7 +805,6 @@ name = "desktop"
 version = "0.1.0"
 dependencies = [
  "serde",
- "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
@@ -4456,7 +4455,10 @@ name = "unifiedstream-audio"
 version = "0.1.0"
 dependencies = [
  "pipewire",
+ "serde",
+ "serde_json",
  "thiserror 2.0.19",
+ "tokio",
  "tracing",
  "unifiedstream-net",
 ]
@@ -4481,6 +4483,7 @@ name = "unifiedstream-video"
 version = "0.1.0"
 dependencies = [
  "jpeg-encoder",
+ "serde",
  "thiserror 2.0.19",
  "tracing",
  "unifiedstream-net",
