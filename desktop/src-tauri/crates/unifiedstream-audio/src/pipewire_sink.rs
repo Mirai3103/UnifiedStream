@@ -14,7 +14,7 @@ use std::sync::mpsc;
 
 use pipewire::{self as pw, spa};
 
-use crate::{AudioCapture, AudioError, AudioFormat, FrameChunker};
+use crate::{AudioCapture, AudioError, AudioFormat, FrameCallback, FrameChunker};
 
 /// Node description applications see in their device pickers.
 pub const SINK_NODE_NAME: &str = "UnifiedStream Speaker";
@@ -24,9 +24,6 @@ pub const SINK_NODE_ID: &str = "unifiedstream-speaker";
 
 /// How long to wait for the PipeWire thread to report startup success or failure.
 const STARTUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
-
-/// Called from the PipeWire thread with each complete frame of captured samples.
-pub type FrameCallback = Box<dyn FnMut(Vec<i16>) + Send>;
 
 struct Worker {
     quit: pw::channel::Sender<()>,

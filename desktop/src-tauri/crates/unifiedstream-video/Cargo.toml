@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+# SetupHint crosses the Tauri boundary to the webview, so it serializes here rather than being
+# re-shaped by the application layer.
+serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 # Pure-Rust JPEG decoding: network-fed frames never reach C code.

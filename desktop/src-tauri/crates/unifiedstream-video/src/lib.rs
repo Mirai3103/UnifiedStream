@@ -7,6 +7,7 @@
 #![deny(missing_docs)]
 
 mod decode;
+pub mod platform;
 #[cfg(target_os = "linux")]
 mod v4l2;
 
@@ -52,13 +53,56 @@ impl VideoFormat {
     }
 }
 
+/// User-facing guidance from a platform implementation that could not start.
+///
+/// Carried across the platform seam so the application layer and the user interface never hold
+/// remediation text of their own: the implementation that knows what is missing is the one that
+/// says how to fix it. On Linux the missing-module case supplies [`MODPROBE_HINT`] as the
+/// command; a failure with nothing the user can run supplies the message alone.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SetupHint {
+    /// What is wrong, in user terms.
+    pub message: String,
+    /// A command that resolves it, where one exists. Rendered copyable by the UI.
+    pub command: Option<String>,
+}
+
+impl SetupHint {
+    /// Guidance with no command the user can run.
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            command: None,
+        }
+    }
+
+    /// Guidance carrying the exact command that resolves the failure.
+    #[must_use]
+    pub fn with_command(message: impl Into<String>, command: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            command: Some(command.into()),
+        }
+    }
+}
+
+impl std::fmt::Display for SetupHint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Only the message: the command is rendered separately and copyable, and repeating it
+        // here would double it in the error text the UI already shows.
+        f.write_str(&self.message)
+    }
+}
+
 /// Why a video sink could not start, or a frame could not be presented.
 #[derive(Debug, thiserror::Error)]
 pub enum VideoError {
-    /// No usable loopback device — the kernel module is missing or every device is taken.
-    /// The message carries the user-facing guidance, including [`MODPROBE_HINT`].
+    /// No usable virtual camera device — on Linux the kernel module is missing or every device
+    /// is taken. Carries the platform's own [`SetupHint`] rather than a bare string, so the
+    /// remediation command never has to be reconstructed by the caller.
     #[error("virtual camera unavailable: {0}")]
-    Unavailable(String),
+    Unavailable(SetupHint),
     /// The device refused this geometry, or the format is out of contract (odd dimensions).
     #[error("unsupported format: {0}")]
     UnsupportedFormat(String),
@@ -69,9 +113,9 @@ pub enum VideoError {
 
 /// Something that turns received camera frames into a webcam the OS can offer to applications.
 ///
-/// One implementation exists today — [`V4l2LoopbackSink`] — but the trait is what keeps a
-/// future Windows virtual camera from touching the receive path, mirroring `AudioSink` in
-/// `unifiedstream-audio`.
+/// The whole surface the application layer needs: it holds a `Box<dyn VideoSink>` and never
+/// names a platform type, so a virtual camera for another platform is added in
+/// [`platform`] alone. Implementations are obtained from [`platform::video_sink`].
 pub trait VideoSink: Send {
     /// Create the output at the given geometry. Idempotent: starting a started sink is a no-op.
     ///
@@ -93,6 +137,20 @@ pub trait VideoSink: Send {
     /// The UI derives its delivered-fps figure from this advancing, so a wedged device or a
     /// stream of undecodable frames reads as 0 fps rather than as a healthy stream.
     fn frames_written(&self) -> u64;
+
+    /// Frames dropped since `start` because they failed to decode.
+    ///
+    /// On the trait rather than on one implementation because the UI's contract depends on it:
+    /// a stream of undecodable frames must read as 0 fps with a rising failure count, not as a
+    /// healthy stream.
+    fn decode_failures(&self) -> u64;
+
+    /// An opaque platform label for the device being written to, while started.
+    ///
+    /// A device node path on Linux, a registered filter name elsewhere. The application layer
+    /// forwards it to the UI without interpreting it, so nothing above this trait assumes the
+    /// shape of a device identifier.
+    fn device_label(&self) -> Option<String>;
 
     /// Tear the output down. Idempotent.
     fn stop(&mut self);

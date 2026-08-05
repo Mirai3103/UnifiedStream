@@ -68,6 +68,8 @@ UnifiedStream is designed for a trusted LAN. Pair only with devices you recogniz
 
 Follow [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, validation commands, branches, and pull requests. Component-specific desktop commands are in [desktop/README.md](desktop/README.md).
 
+The desktop application layer depends only on media traits, and each integration crate selects its platform implementation in one module. A target without an implementation compiles and runs with its media toggles reporting the feature as unavailable, and CI verifies that on a Windows runner every pull request. [Windows architecture decisions](docs/design.windows.md) records the decisions that seam is shaped to accommodate.
+
 ## License
 
 No license has been declared yet. Until a license file is added, normal copyright restrictions apply.

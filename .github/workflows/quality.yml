@@ -29,8 +29,14 @@ jobs:
         run: python3 scripts/check-markdown.py
 
   rust:
-    name: rust
-    runs-on: ubuntu-24.04
+    # One check per verified platform. The Windows leg is what keeps the application layer from
+    # depending on a Linux-only type again: a new one fails to compile here, before review.
+    name: rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
     defaults:
       run:
         working-directory: desktop/src-tauri
@@ -38,6 +44,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
       - name: Install Linux build dependencies
+        if: matrix.os == 'ubuntu-24.04'
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes \
@@ -60,11 +67,20 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri -> target
+          key: ${{ matrix.os }}
       - name: Check Rust formatting
+        if: matrix.os == 'ubuntu-24.04'
         run: cargo fmt --all -- --check
+      - name: Check the workspace compiles for this target
+        if: matrix.os != 'ubuntu-24.04'
+        run: cargo check --workspace
       - name: Run production Clippy
         run: cargo clippy --workspace --lib --bins -- -D warnings
+      # Not run off Linux: the workspace's integration tests exercise PipeWire and v4l2 loopback
+      # behavior that has no meaning on another platform, and the portable code they share is
+      # already covered by this same suite on the Linux leg.
       - name: Run Rust workspace tests
+        if: matrix.os == 'ubuntu-24.04'
         run: cargo test --workspace
 
   android:

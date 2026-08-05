@@ -12,7 +12,7 @@ use std::sync::{mpsc, Arc};
 use v4l::video::Output as _;
 use v4l::FourCC;
 
-use crate::{VideoError, VideoFormat, VideoSink, CAMERA_NODE_LABEL, MODPROBE_HINT};
+use crate::{SetupHint, VideoError, VideoFormat, VideoSink, CAMERA_NODE_LABEL, MODPROBE_HINT};
 
 /// Driver name every v4l2loopback device reports in `VIDIOC_QUERYCAP`.
 const LOOPBACK_DRIVER: &str = "v4l2 loopback";
@@ -76,8 +76,11 @@ pub fn find_loopback_device() -> Result<LoopbackDevice, VideoError> {
     }
 
     fallback.ok_or_else(|| {
-        VideoError::Unavailable(format!(
-            "no v4l2loopback device found — load the module with: {MODPROBE_HINT}"
+        // The one failure the user can fix with a command, so the hint carries it. The message
+        // repeats it so the error text alone is actionable in logs.
+        VideoError::Unavailable(SetupHint::with_command(
+            format!("no v4l2loopback device found — load the module with: {MODPROBE_HINT}"),
+            MODPROBE_HINT,
         ))
     })
 }
@@ -148,11 +151,14 @@ impl VideoSink for V4l2LoopbackSink {
         // Fix the device's output format before any consumer probes it. The v4l handle is
         // only needed for the ioctl; frames go through a plain file descriptor below, and
         // v4l2loopback keeps the format per device, not per open.
-        let device = v4l::Device::with_path(&target.path)
-            .map_err(|e| VideoError::Unavailable(format!("{}: {e}", target.path.display())))?;
+        let device = v4l::Device::with_path(&target.path).map_err(|e| {
+            VideoError::Unavailable(SetupHint::new(format!("{}: {e}", target.path.display())))
+        })?;
         let wanted = v4l::Format::new(format.width, format.height, FourCC::new(b"YU12"));
         let actual = device.set_format(&wanted).map_err(|e| {
-            VideoError::Unavailable(format!("could not set the device format: {e}"))
+            VideoError::Unavailable(SetupHint::new(format!(
+                "could not set the device format: {e}"
+            )))
         })?;
         if (actual.width, actual.height) != (format.width, format.height)
             || actual.fourcc != FourCC::new(b"YU12")
@@ -167,7 +173,9 @@ impl VideoSink for V4l2LoopbackSink {
         let mut writer = std::fs::OpenOptions::new()
             .write(true)
             .open(&target.path)
-            .map_err(|e| VideoError::Unavailable(format!("{}: {e}", target.path.display())))?;
+            .map_err(|e| {
+                VideoError::Unavailable(SetupHint::new(format!("{}: {e}", target.path.display())))
+            })?;
 
         let (frame_tx, frame_rx) = mpsc::sync_channel::<Vec<u8>>(FRAME_QUEUE);
         let counters = Arc::clone(&self.counters);
@@ -209,7 +217,9 @@ impl VideoSink for V4l2LoopbackSink {
                 }
             })
             .map_err(|e| {
-                VideoError::Unavailable(format!("could not spawn the sink worker: {e}"))
+                VideoError::Unavailable(SetupHint::new(format!(
+                    "could not spawn the sink worker: {e}"
+                )))
             })?;
 
         tracing::info!(
@@ -237,6 +247,15 @@ impl VideoSink for V4l2LoopbackSink {
 
     fn frames_written(&self) -> u64 {
         self.counters.written.load(Ordering::Relaxed)
+    }
+
+    fn decode_failures(&self) -> u64 {
+        Self::decode_failures(self)
+    }
+
+    fn device_label(&self) -> Option<String> {
+        // The device node is this platform's label; nothing above the trait parses it.
+        self.device_path().map(|path| path.display().to_string())
     }
 
     fn stop(&mut self) {

@@ -11,8 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{oneshot, Mutex};
 
 use unifiedstream_audio::{
-    AudioCapture, AudioFormat, AudioSink, JitterBuffer, PipeWireSource, PipeWireSpeakerSink,
-    SINK_NODE_ID,
+    platform as audio_platform, AudioCapture, AudioFormat, AudioRouting, AudioSink, JitterBuffer,
 };
 use unifiedstream_net::control::{
     ControlEvent, ControlHandle, ControlServer, ServerConfig, TrustStore,
@@ -29,7 +28,7 @@ use unifiedstream_net::transport::{
     TestStreamVerifier, MAX_DATAGRAM,
 };
 use unifiedstream_net::{DEFAULT_CONTROL_PORT, DEFAULT_MEDIA_PORT};
-use unifiedstream_video::{V4l2LoopbackSink, VideoFormat, VideoSink, MODPROBE_HINT};
+use unifiedstream_video::{platform as video_platform, SetupHint, VideoFormat, VideoSink};
 
 /// Event names emitted to the webview. Kept in one place so the TypeScript side has a single
 /// list to mirror.
@@ -122,8 +121,8 @@ pub struct AudioLevel {
 /// The microphone sink and its bookkeeping.
 #[derive(Default)]
 struct MicSink {
-    /// The PipeWire source while a mic stream is accepted.
-    sink: Option<PipeWireSource>,
+    /// The platform's virtual microphone while a mic stream is accepted.
+    sink: Option<Box<dyn AudioSink>>,
     /// What the UI shows.
     status: MicStatus,
 }
@@ -135,12 +134,13 @@ pub struct CameraStatus {
     pub active: bool,
     /// Why the camera is unavailable, when it is.
     pub error: Option<String>,
-    /// The command that fixes a missing v4l2loopback module. Present exactly when the last
-    /// failure was the module being absent, so the UI can offer it copyable.
-    pub hint: Option<String>,
+    /// Setup guidance from the platform implementation for the last failure, when it supplied
+    /// any. Its command, where the platform named one, is what the UI offers copyable.
+    pub hint: Option<SetupHint>,
     /// Negotiated stream parameters while active.
     pub params: Option<VideoParams>,
-    /// Device node the virtual camera writes to, e.g. `/dev/video10`.
+    /// The platform's label for the device being written to. Opaque here: this layer forwards
+    /// it without assuming it is a path.
     pub device: Option<String>,
 }
 
@@ -161,8 +161,8 @@ pub struct CameraStats {
 /// The camera sink and its bookkeeping. Mirrors [`MicSink`]: the desktop is the stream sink.
 #[derive(Default)]
 struct CameraSink {
-    /// The v4l2loopback writer while a camera stream is accepted.
-    sink: Option<V4l2LoopbackSink>,
+    /// The platform's virtual camera while a camera stream is accepted.
+    sink: Option<Box<dyn VideoSink>>,
     /// Emits [`CameraStats`] at 1 Hz while the stream is active.
     stats_task: Option<tauri::async_runtime::JoinHandle<()>>,
     /// What the UI shows.
@@ -178,8 +178,10 @@ pub struct SpeakerStatus {
     pub starting: bool,
     /// Whether frame transmission is withheld while the stream stays up.
     pub muted: bool,
-    /// Whether the system default output is routed to the virtual sink.
-    pub routed: bool,
+    /// Whether the system default output is routed to the virtual sink, or `None` where the
+    /// platform has no routing concept at all. Absence is not "off": the UI omits the control
+    /// entirely rather than showing one that could only fail.
+    pub routed: Option<bool>,
     /// Why the speaker is unavailable, when it is.
     pub error: Option<String>,
     /// Negotiated stream parameters while active.
@@ -190,8 +192,8 @@ pub struct SpeakerStatus {
 /// inverse of the microphone — so this owns capture, not playback.
 #[derive(Default)]
 struct SpeakerSource {
-    /// The PipeWire virtual sink while the speaker stream lives.
-    sink: Option<PipeWireSpeakerSink>,
+    /// The platform's system audio capture while the speaker stream lives.
+    sink: Option<Box<dyn AudioCapture>>,
     /// Sends captured frames to the phone while the stream is accepted.
     send_task: Option<tauri::async_runtime::JoinHandle<()>>,
     /// Fails the toggle visibly if the phone never answers `stream_start`.
@@ -200,16 +202,6 @@ struct SpeakerSource {
     pending_frames: Option<tokio::sync::mpsc::Receiver<Vec<i16>>>,
     /// What the UI shows.
     status: SpeakerStatus,
-}
-
-/// What `pactl` remembered before the virtual sink took over the default output.
-///
-/// Persisted *before* switching, so a crash while routed can still restore the user's device
-/// on the next launch — a hijacked default that survives our death is unacceptable.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct RoutingMemo {
-    /// `pactl` name of the sink that was the default before routing was enabled.
-    previous_default: String,
 }
 
 /// What the UI needs to render the whole screen after a reload.
@@ -276,7 +268,7 @@ pub struct AppState {
     test_report: Arc<Mutex<TestStreamReport>>,
 
     mic: Arc<Mutex<MicSink>>,
-    /// Shared with the PipeWire process callback; the receive path pushes decoded frames.
+    /// Shared with the platform sink's pull callback; the receive path pushes decoded frames.
     mic_buffer: Arc<JitterBuffer>,
 
     camera: Arc<Mutex<CameraSink>>,
@@ -284,8 +276,9 @@ pub struct AppState {
     speaker: Arc<Mutex<SpeakerSource>>,
     /// Read by the speaker send task on every frame; a mute must not wait on a lock.
     speaker_muted: Arc<std::sync::atomic::AtomicBool>,
-    /// Where the previous default output is remembered while routing is enabled.
-    routing_memo_path: PathBuf,
+    /// Default-output routing, where this platform needs it to capture system audio. `None` on
+    /// a platform with no such concept — see [`SpeakerStatus::routed`].
+    routing: Option<Box<dyn AudioRouting>>,
     /// The one live media receiver. Replaced — not accumulated — on session change.
     media_task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     /// Register/unregister requests for the receiver's demultiplexer.
@@ -314,6 +307,18 @@ impl AppState {
         )?;
         let media = MediaSocket::bind_on(DEFAULT_MEDIA_PORT).await?;
 
+        // Resolved once at startup: whether this platform routes at all decides whether the UI
+        // ever sees a routing control, so the speaker starts out reporting the capability's
+        // presence rather than a bare `false`.
+        let routing = audio_platform::audio_routing(&config_dir);
+        let speaker = SpeakerSource {
+            status: SpeakerStatus {
+                routed: routing.as_ref().map(|_| false),
+                ..SpeakerStatus::default()
+            },
+            ..SpeakerSource::default()
+        };
+
         Ok(Self {
             identity,
             trust_path: config_dir.join("trusted-devices.json"),
@@ -330,12 +335,18 @@ impl AppState {
             mic: Arc::new(Mutex::new(MicSink::default())),
             mic_buffer: Arc::new(JitterBuffer::default()),
             camera: Arc::new(Mutex::new(CameraSink::default())),
-            speaker: Arc::new(Mutex::new(SpeakerSource::default())),
+            speaker: Arc::new(Mutex::new(speaker)),
             speaker_muted: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            routing_memo_path: config_dir.join("speaker-routing.json"),
+            routing,
             media_task: Mutex::new(None),
             media_cmds: Mutex::new(None),
         })
+    }
+
+    /// What `SpeakerStatus.routed` reads when nothing is routed: `Some(false)` where the
+    /// platform provides routing, `None` where the capability does not exist.
+    fn routing_idle(&self) -> Option<bool> {
+        self.routing.as_ref().map(|_| false)
     }
 
     fn supported_caps() -> Vec<String> {
@@ -441,22 +452,30 @@ pub async fn set_speaker_muted(
 }
 
 /// Route the system default output to the virtual sink, or restore the previous device.
+///
+/// Fails as a state error on a platform that reports no routing capability. The UI does not
+/// offer the control there, so reaching this is a bug or a stale webview rather than something
+/// the user can do.
 #[tauri::command]
 pub async fn set_speaker_routing(
     enabled: bool,
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> AppResult<()> {
+    let routing = state.routing.as_ref().ok_or_else(|| {
+        AppError::State("this platform does not route the system output".to_owned())
+    })?;
+
     if enabled {
         let active = state.speaker.lock().await.status.active;
         if !active {
             return Err(AppError::State("start the speaker first".to_owned()));
         }
-        enable_routing(&state).await.map_err(AppError::State)?;
-        state.speaker.lock().await.status.routed = true;
+        routing.enable().await.map_err(AppError::State)?;
+        state.speaker.lock().await.status.routed = Some(true);
     } else {
-        restore_routing(&state).await;
-        state.speaker.lock().await.status.routed = false;
+        routing.restore().await;
+        state.speaker.lock().await.status.routed = Some(false);
     }
     emit_speaker_status(&app, &state).await;
     Ok(())
@@ -790,7 +809,7 @@ async fn handle_stream_start(
     }
 }
 
-/// Stand up the PipeWire virtual source for a microphone `stream_start`.
+/// Stand up the platform's virtual microphone for a microphone `stream_start`.
 async fn handle_mic_stream_start(
     app: &AppHandle,
     state: &Arc<AppState>,
@@ -820,10 +839,10 @@ async fn handle_mic_stream_start(
     let mic = Arc::clone(&state.mic);
     let buffer = Arc::clone(&state.mic_buffer);
 
-    // Sink creation talks to the PipeWire daemon and can block for seconds when it is
+    // Sink creation talks to the platform's audio system and can block for seconds when it is
     // wedged; keep that off the event pump so control traffic stays responsive.
     let started = tauri::async_runtime::spawn_blocking(move || {
-        let mut sink = PipeWireSource::new(buffer);
+        let mut sink = audio_platform::audio_sink(buffer);
         sink.start(format).map(|()| sink)
     })
     .await;
@@ -882,7 +901,7 @@ async fn stop_mic_sink(app: &AppHandle, state: &Arc<AppState>) {
         sink
     };
 
-    // stop() joins the PipeWire thread; keep the block off the async pump.
+    // stop() joins the platform's audio thread; keep the block off the async pump.
     let _ = tauri::async_runtime::spawn_blocking(move || {
         if let Some(mut sink) = sink {
             sink.stop();
@@ -913,7 +932,7 @@ async fn emit_mic_status(app: &AppHandle, state: &Arc<AppState>) {
 /// frames stay far below `MAX_FRAME_BYTES`, and nothing bigger has a UI to request it.
 const MAX_CAMERA_PIXELS: u32 = 1920 * 1080;
 
-/// Stand up the v4l2loopback virtual camera for a camera `stream_start`, protocol §7.
+/// Stand up the platform's virtual camera for a camera `stream_start`, protocol §7.
 async fn handle_camera_stream_start(
     app: &AppHandle,
     state: &Arc<AppState>,
@@ -949,10 +968,10 @@ async fn handle_camera_stream_start(
     };
     let camera = Arc::clone(&state.camera);
 
-    // Device discovery and format negotiation are /dev walks and kernel ioctls; keep them off
-    // the event pump, like the PipeWire paths.
+    // Device discovery and format negotiation talk to the platform's driver stack; keep them
+    // off the event pump, like the audio paths.
     let started = tauri::async_runtime::spawn_blocking(move || {
-        let mut sink = V4l2LoopbackSink::new();
+        let mut sink = video_platform::video_sink();
         sink.start(format).map(|()| sink)
     })
     .await;
@@ -966,7 +985,7 @@ async fn handle_camera_stream_start(
             if let Some(task) = camera_state.stats_task.take() {
                 task.abort();
             }
-            let device = sink.device_path().map(|p| p.display().to_string());
+            let device = sink.device_label();
             camera_state.sink = Some(sink);
             camera_state.status = CameraStatus {
                 active: true,
@@ -984,9 +1003,12 @@ async fn handle_camera_stream_start(
             emit_camera_status(app, state).await;
         }
         Ok(Err(e)) => {
-            // The missing-module case gets the exact command to fix it, per the spec.
-            let hint = matches!(e, unifiedstream_video::VideoError::Unavailable(_))
-                .then(|| MODPROBE_HINT.to_owned());
+            // Whatever guidance the platform supplied travels with the failure; this layer adds
+            // none of its own and knows nothing about what fixes it.
+            let hint = match &e {
+                unifiedstream_video::VideoError::Unavailable(hint) => Some(hint.clone()),
+                _ => None,
+            };
             camera_state.status = CameraStatus {
                 active: false,
                 error: Some(e.to_string()),
@@ -1087,7 +1109,7 @@ async fn emit_camera_status(app: &AppHandle, state: &Arc<AppState>) {
 
 // --- Speaker (desktop as stream source) -----------------------------------------------------
 
-/// Queue between the PipeWire capture callback and the async send task. Small and lossy on
+/// Queue between the platform capture callback and the async send task. Small and lossy on
 /// purpose: audio is only useful fresh, and a stalled sender must not grow a latency debt.
 const SPEAKER_FRAME_QUEUE: usize = 8;
 
@@ -1126,12 +1148,12 @@ async fn start_speaker_stream(app: &AppHandle, state: &Arc<AppState>) -> AppResu
         return Ok(());
     }
 
-    // The capture callback runs on the PipeWire thread; frames cross into async land through
-    // a bounded channel. try_send drops a frame when the sender is stalled, which is the
-    // lossy-by-design behavior the jitter budget expects.
+    // The capture callback runs on the platform's own capture thread; frames cross into async
+    // land through a bounded channel. try_send drops a frame when the sender is stalled, which
+    // is the lossy-by-design behavior the jitter budget expects.
     let (frame_tx, frame_rx) = tokio::sync::mpsc::channel::<Vec<i16>>(SPEAKER_FRAME_QUEUE);
     let started = tauri::async_runtime::spawn_blocking(move || {
-        let mut sink = PipeWireSpeakerSink::new(Box::new(move |frame| {
+        let mut sink = audio_platform::audio_capture(Box::new(move |frame| {
             let _ = frame_tx.try_send(frame);
         }));
         sink.start(AudioFormat::SPEAKER).map(|()| sink)
@@ -1286,7 +1308,7 @@ async fn stop_speaker(app: &AppHandle, state: &Arc<AppState>, notify_peer: bool)
     let (sink, was_live, was_routed) = {
         let mut speaker = state.speaker.lock().await;
         let was_live = speaker.status.active || speaker.status.starting;
-        let was_routed = speaker.status.routed;
+        let was_routed = speaker.status.routed == Some(true);
         if let Some(task) = speaker.send_task.take() {
             task.abort();
         }
@@ -1299,6 +1321,7 @@ async fn stop_speaker(app: &AppHandle, state: &Arc<AppState>, notify_peer: bool)
             muted: state
                 .speaker_muted
                 .load(std::sync::atomic::Ordering::Relaxed),
+            routed: state.routing_idle(),
             ..SpeakerStatus::default()
         };
         (sink, was_live, was_routed)
@@ -1306,11 +1329,13 @@ async fn stop_speaker(app: &AppHandle, state: &Arc<AppState>, notify_peer: bool)
 
     // The user's output device comes back before the node it was routed to disappears.
     if was_routed {
-        restore_routing(state).await;
+        if let Some(routing) = state.routing.as_ref() {
+            routing.restore().await;
+        }
     }
 
     if let Some(mut sink) = sink {
-        // stop() joins the PipeWire thread; keep the block off the async pump.
+        // stop() joins the platform's audio thread; keep the block off the async pump.
         let _ = tauri::async_runtime::spawn_blocking(move || sink.stop()).await;
     }
 
@@ -1369,71 +1394,14 @@ fn encode_s16le(samples: &[i16]) -> Vec<u8> {
 
 // --- System audio routing -------------------------------------------------------------------
 
-/// Run one `pactl` invocation, returning trimmed stdout.
-async fn pactl(args: &[&str]) -> std::result::Result<String, String> {
-    let output = tokio::process::Command::new("pactl")
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("could not run pactl: {e}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "pactl {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
-}
-
-/// Make the virtual sink the system default output, remembering the previous device first.
+/// Repair a routing takeover left by an unclean exit, at startup.
 ///
-/// The memo is written *before* the switch: if this process dies while routed, the next launch
-/// finds the file and restores the user's device (see [`sweep_stale_routing`]).
-async fn enable_routing(state: &Arc<AppState>) -> std::result::Result<(), String> {
-    let current = pactl(&["get-default-sink"]).await?;
-    if current != SINK_NODE_ID {
-        let memo = RoutingMemo {
-            previous_default: current,
-        };
-        let text = serde_json::to_string(&memo)
-            .map_err(|e| format!("could not encode routing memo: {e}"))?;
-        if let Some(parent) = state.routing_memo_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        std::fs::write(&state.routing_memo_path, text)
-            .map_err(|e| format!("could not remember the previous output: {e}"))?;
-    }
-    pactl(&["set-default-sink", SINK_NODE_ID]).await?;
-    tracing::info!("system audio routed to the virtual sink");
-    Ok(())
-}
-
-/// Restore the remembered default output and forget the memo. Idempotent.
-async fn restore_routing(state: &Arc<AppState>) {
-    let path = state.routing_memo_path.clone();
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return; // no memo: routing was never enabled, or already restored
-    };
-    if let Ok(memo) = serde_json::from_str::<RoutingMemo>(&text) {
-        match pactl(&["set-default-sink", &memo.previous_default]).await {
-            Ok(_) => tracing::info!(sink = %memo.previous_default, "default output restored"),
-            Err(e) => tracing::warn!(error = %e, "could not restore the default output"),
-        }
-    }
-    let _ = std::fs::remove_file(&path);
-}
-
-/// Repair a stale routing takeover left by an unclean exit.
-///
-/// Every clean path deletes the memo, so its presence at startup means the last run died while
-/// the virtual sink held the default output. The sink itself died with that process — PipeWire
-/// already fell back to a real device — but the *remembered* default may still name our node,
-/// so the persisted previous device is put back.
+/// What "stale" means and how it is repaired belong to the platform; this layer only knows that
+/// a platform which routes gets the chance to clean up before the window opens, and one that
+/// does not has nothing to do.
 pub async fn sweep_stale_routing(state: &Arc<AppState>) {
-    if state.routing_memo_path.is_file() {
-        tracing::warn!("found a stale routing takeover from a previous run; restoring");
-        restore_routing(state).await;
+    if let Some(routing) = state.routing.as_ref() {
+        routing.sweep_stale().await;
     }
 }
 
