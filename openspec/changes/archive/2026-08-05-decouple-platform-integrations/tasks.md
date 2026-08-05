@@ -43,6 +43,6 @@
 
 - [x] 6.1 `cargo fmt --all -- --check`, `cargo clippy --workspace --lib --bins -- -D warnings`, and `cargo test --workspace` pass on Linux with no new warnings
 - [x] 6.2 `cargo check --workspace` and Clippy pass for `x86_64-pc-windows-msvc` on the Windows runner
-- [ ] 6.3 Manual Linux regression on CachyOS: camera to a v4l2 device with correct fps and device path shown; the `modprobe` hint appears verbatim with the module unloaded; microphone visible as a PipeWire source with a live level meter; speaker with the routing toggle, including default-output restore after a forced kill and the stale-takeover sweep on the next launch
+- [x] 6.3 Manual Linux regression on CachyOS: camera to a v4l2 device with correct fps and device path shown; the `modprobe` hint appears verbatim with the module unloaded; microphone visible as a PipeWire source with a live level meter; speaker with the routing toggle, including default-output restore after a forced kill and the stale-takeover sweep on the next launch
 - [x] 6.4 Manual Windows smoke run of the produced binary: the app starts, advertises, pairs with the phone, connects, and reports telemetry, and each of the three toggles fails with a visible unsupported message rather than crashing or appearing to succeed
-- [ ] 6.5 Sync the delta specs into `openspec/specs/`, archive the change, and record the commands run in the pull request template
+- [x] 6.5 Sync the delta specs into `openspec/specs/`, archive the change, and record the commands run in the pull request template
