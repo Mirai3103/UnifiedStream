@@ -1164,12 +1164,12 @@ async fn start_speaker_stream(app: &AppHandle, state: &Arc<AppState>) -> AppResu
         Ok(Ok(sink)) => sink,
         Ok(Err(e)) => {
             tracing::warn!(error = %e, "speaker sink failed to start");
-            set_speaker_error(app, state, format!("Virtual sink unavailable: {e}")).await;
+            set_speaker_error(app, state, format!("System audio capture unavailable: {e}")).await;
             return Ok(());
         }
         Err(join_error) => {
             tracing::error!(error = %join_error, "speaker sink task panicked");
-            set_speaker_error(app, state, "Virtual sink unavailable").await;
+            set_speaker_error(app, state, "System audio capture unavailable").await;
             return Ok(());
         }
     };
@@ -1270,6 +1270,7 @@ fn spawn_speaker_send_task(
     tauri::async_runtime::spawn(async move {
         let mut sender = MediaSender::new(session_id);
         let mut frames_since_level: u32 = 0;
+        let mut send_failed = false;
 
         while let Some(frame) = frames.recv().await {
             // Mute stops transmission entirely; the phone's jitter buffer underruns into
@@ -1293,9 +1294,26 @@ fn spawn_speaker_send_task(
                 Ok(_) => telemetry.lock().await.record_sent(bytes as u64),
                 Err(e) => {
                     tracing::warn!(error = %e, "speaker send failed");
+                    send_failed = true;
                     break;
                 }
             }
+        }
+
+        // The loop ends for one of two reasons. A send failure breaks out above. Otherwise the
+        // frame channel closed on its own, which means the platform capture dropped its callback
+        // and stopped delivering — the "capture aborts while the stream is active" case, which
+        // must be visible rather than a stream that is simply silent forever. A user-initiated
+        // stop never reaches here: `stop_speaker` aborts this task before the sink is dropped.
+        if !send_failed {
+            tracing::error!("system audio capture stopped delivering frames");
+            // Torn down from a fresh task: `stop_speaker` aborts *this* one on its way through,
+            // and a task that aborts itself never finishes what it started.
+            tauri::async_runtime::spawn(async move {
+                stop_speaker(&app, &state, true).await;
+                // After the stop, which resets the status the error has to survive on.
+                set_speaker_error(&app, &state, "System audio capture stopped").await;
+            });
         }
     })
 }

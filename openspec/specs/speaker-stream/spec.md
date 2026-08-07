@@ -5,31 +5,7 @@
 The end-to-end wireless speaker: desktop-side system audio capture via a PipeWire virtual sink, the speaker payload format on stream ID 3, phone-side decoding, jitter buffering, and playback, speaker controls (toggle, mute, volume, system routing), and level indication in both UIs.
 
 See `openspec/specs/protocol.md` §3.9 and §6 for the normative wire format these requirements are implemented against.
-
 ## Requirements
-
-### Requirement: Desktop virtual audio sink
-
-The desktop SHALL expose a PipeWire virtual sink named "UnifiedStream Speaker" that ordinary applications can select as an output device, and SHALL capture the audio played into it for transmission. The sink SHALL exist only while a speaker stream is active.
-
-#### Scenario: Applications see a normal output device
-
-- **WHEN** the speaker stream is accepted by the phone
-- **THEN** a PipeWire node named "UnifiedStream Speaker" with media class Audio/Sink appears
-- **AND** audio an application plays into it is transmitted to the phone
-
-#### Scenario: The sink is removed when the stream ends
-
-- **WHEN** the speaker stream is stopped or the session ends for any reason
-- **THEN** the virtual sink node is destroyed
-- **AND** no orphaned node remains after the desktop app exits
-
-#### Scenario: Audio system unavailability is reported
-
-- **WHEN** the desktop cannot create the virtual sink (e.g., PipeWire is not running)
-- **THEN** it does not start the speaker stream
-- **AND** the desktop UI shows that the virtual sink is unavailable
-
 ### Requirement: System audio routing
 
 System audio routing is an optional platform capability. On a platform whose audio system requires the desktop to become the system default output in order to capture system audio, the desktop SHALL offer a control that makes the virtual sink the system default output while the speaker stream is active, and SHALL restore the previously selected default output when the stream stops, the session ends, or on application startup after an unclean exit.
@@ -61,13 +37,20 @@ On a platform that captures system audio without taking over the default output,
 
 ### Requirement: Desktop-side audio capture
 
-The desktop SHALL capture audio from the virtual sink at 48 kHz, 16-bit PCM, in 20 ms frames, only while a speaker stream is active.
+The desktop SHALL capture audio from the platform's system audio source at the negotiated stream format — 48 kHz, 16-bit PCM, in 20 ms frames by default — only while a speaker stream is active. Where the platform's audio source runs at a different sample rate or sample format, the desktop SHALL convert captured audio to the negotiated format before transmission, so that the wire format does not vary with the user's audio hardware.
 
 #### Scenario: Capture starts with the stream
 
 - **WHEN** the speaker stream is accepted by the phone
-- **THEN** the desktop begins capturing 48 kHz 16-bit PCM audio from the virtual sink in 20 ms frames
+- **THEN** the desktop begins capturing 48 kHz 16-bit PCM audio from the platform's system audio source in 20 ms frames
 - **AND** capture stops when the stream is stopped or the session ends
+
+#### Scenario: The audio source runs at a different format
+
+- **WHEN** the platform's system audio source delivers samples at a sample rate or sample format other than the negotiated one
+- **THEN** the desktop converts them to the negotiated format
+- **AND** the phone receives 20 ms frames at the negotiated rate, byte-identical in layout to frames from a source that needed no conversion
+- **AND** no renegotiation with the phone is required
 
 #### Scenario: Capture failure is visible
 
@@ -204,3 +187,72 @@ Both applications SHALL display a live output level while the speaker stream is 
 
 - **WHEN** the desktop speaker mute is engaged
 - **THEN** the phone's level indicator shows silence
+
+### Requirement: Desktop system audio source
+
+The desktop SHALL capture the audio the user hears and transmit it to the phone while a speaker stream is active. How the audio is obtained is a platform concern: a platform MAY create a virtual output device and capture what is played into it, or MAY capture the existing system output device directly. The chosen mechanism SHALL exist only while a speaker stream is active, and SHALL be reported to the user when it cannot be established.
+
+A platform that captures the existing output device directly SHALL NOT create an output device and SHALL NOT change the device the user selected.
+
+#### Scenario: A platform that captures through a virtual output device
+
+- **WHEN** the speaker stream is accepted by the phone on a platform whose audio system requires a virtual output device
+- **THEN** an output device named "UnifiedStream Speaker" appears and ordinary applications can select it
+- **AND** audio an application plays into it is transmitted to the phone
+- **AND** the device is destroyed when the stream stops or the session ends, leaving nothing behind after the desktop application exits
+
+#### Scenario: A platform that captures the existing output device
+
+- **WHEN** the speaker stream is accepted by the phone on a platform that can capture the existing system output directly
+- **THEN** no additional output device appears in the user's device list
+- **AND** the user's selected output device is unchanged
+- **AND** audio continues to play on the user's own speakers while it is transmitted to the phone
+
+#### Scenario: The audio source cannot be established
+
+- **WHEN** the desktop cannot establish the system audio source
+- **THEN** it does not start the speaker stream
+- **AND** the desktop UI shows that system audio capture is unavailable, naming what failed
+
+### Requirement: Capture continues while the system is silent
+
+While a speaker stream is active, the desktop SHALL continue to deliver audio frames at the negotiated rate even when no application is playing audio. Silence SHALL be transmitted as silence; the stream MUST NOT stall.
+
+This is normative because a capture that observes an idle output device may receive nothing at all rather than receiving silent samples, which would leave the phone's jitter buffer with nothing to consume and the user with a stream that appears dead.
+
+#### Scenario: Nothing is playing on the PC
+
+- **WHEN** the speaker stream is active and no application on the PC is playing audio
+- **THEN** the desktop continues to send 20 ms frames at the negotiated rate
+- **AND** the phone's jitter buffer does not underrun
+- **AND** the desktop and phone continue to report the stream as active
+
+#### Scenario: Playback resumes after silence
+
+- **WHEN** an application begins playing audio after a period of PC silence
+- **THEN** that audio reaches the phone without the stream being restarted
+- **AND** no additional latency remains from the silent period
+
+### Requirement: Capture follows the system output device
+
+Where the desktop captures a specific system output device, it SHALL follow that device for the lifetime of the stream. When the user changes the system default output, or the captured device becomes invalid, the desktop SHALL re-establish capture on the current default output without stopping the stream.
+
+#### Scenario: The user changes the output device mid-stream
+
+- **WHEN** the user selects a different system default output while the speaker stream is active
+- **THEN** the desktop re-establishes capture on the newly selected device
+- **AND** audio played to the new device reaches the phone
+- **AND** the stream is not stopped and the session is not interrupted
+
+#### Scenario: The captured device disappears
+
+- **WHEN** the device being captured becomes invalid, such as a headset being unplugged
+- **THEN** the desktop re-establishes capture on the current default output
+- **AND** the stream continues
+
+#### Scenario: Recovery is impossible
+
+- **WHEN** the desktop cannot re-establish capture on any output device
+- **THEN** the stream is stopped
+- **AND** the desktop UI shows a speaker error state rather than a silently dead stream
+

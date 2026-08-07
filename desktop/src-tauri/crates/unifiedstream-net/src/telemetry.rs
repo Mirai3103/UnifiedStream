@@ -428,6 +428,11 @@ mod tests {
     fn throughput_should_reset_its_counter_each_interval() {
         let mut meter = ThroughputMeter::new();
         meter.add(125_000);
+        // Both windows have to be measurably long. Sampling an interval the clock reports as
+        // zero yields zero by definition, which says nothing about whether the counter reset —
+        // and on a platform whose clock ticks coarsely, back-to-back calls do land in the same
+        // tick.
+        std::thread::sleep(Duration::from_millis(1));
         let first = meter.sample();
         meter.add(125_000);
         std::thread::sleep(Duration::from_millis(1));

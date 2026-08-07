@@ -9,11 +9,11 @@ Use an Android phone as a webcam, microphone, and wireless speaker for a Linux P
 
 - **Virtual camera:** Android camera to a Linux `v4l2loopback` device.
 - **Virtual microphone:** Android microphone to a PipeWire source on Linux.
-- **Wireless speaker:** Linux system audio to the Android speaker or connected headphones.
+- **Wireless speaker:** PC system audio to the Android speaker or connected headphones. How that audio is obtained is a platform choice: Linux routes it through a PipeWire virtual sink it creates and makes the default output, while a Windows build captures the existing default output directly, creating no device and changing nothing the user selected.
 - **Local discovery:** automatic mDNS discovery with a manual IP-address fallback.
 - **Session controls:** pairing, reconnect, per-stream toggles, and live network telemetry.
 
-Windows, macOS, Play Store distribution, stable signing, and automatic updates are not part of this release.
+macOS, Play Store distribution, stable signing, and automatic updates are not part of this release. Windows support is under way — the speaker works on a build made from source — but there is no Windows package, so this release ships Linux artifacts only.
 
 ## Requirements
 

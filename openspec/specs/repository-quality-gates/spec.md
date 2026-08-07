@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the repository-wide quality checks and protected contribution workflow required to keep `main` stable.
-
 ## Requirements
-
 ### Requirement: Pull request quality validation
 The repository SHALL run automated OpenSpec, Rust, Android, and frontend quality checks for every pull request targeting `main` and SHALL report each area as a distinct check. Where an area is verified on more than one target platform, it SHALL report one distinct check per verified platform, and every one of them SHALL be required.
 
@@ -21,7 +19,7 @@ The repository SHALL run automated OpenSpec, Rust, Android, and frontend quality
 - **AND** a failure on any one of them blocks the merge
 
 ### Requirement: Non-Linux compilation gate
-The Rust quality area SHALL verify that the desktop workspace, including the application binary, compiles and passes lints for a target platform other than Linux, on every pull request targeting `main`.
+The Rust quality area SHALL verify that the desktop workspace, including the application binary, compiles and passes lints for a target platform other than Linux, on every pull request targeting `main`. Where that platform has media implementations of its own, the gate SHALL also run the tests that can run there, so platform code is verified on the platform it targets rather than only compiled for it.
 
 #### Scenario: A Linux-only dependency reaches the application layer
 - **WHEN** a change makes the application layer depend on a Linux-only type, module, or crate
@@ -31,7 +29,12 @@ The Rust quality area SHALL verify that the desktop workspace, including the app
 #### Scenario: The non-Linux leg runs
 - **WHEN** the non-Linux leg of the Rust quality check executes
 - **THEN** it checks the whole workspace and denies Clippy warnings for workspace production targets
+- **AND** it runs the workspace tests that do not require a subsystem absent from that platform
 - **AND** it does not run tests that require a Linux audio or video subsystem
+
+#### Scenario: Platform media code is added without tests running on its platform
+- **WHEN** a media implementation is added for the non-Linux platform and its tests are not exercised by that leg
+- **THEN** the gate does not report success on the strength of compilation alone
 
 ### Requirement: Reproducible quality commands
 CI SHALL use checked-in wrappers and lockfiles where available, pinned toolchain versions where needed, and the repository's standard validation commands.
@@ -73,3 +76,4 @@ The repository SHALL document the required branch-and-pull-request workflow and 
 #### Scenario: Contributor prepares a change
 - **WHEN** a contributor consults the repository documentation
 - **THEN** they can identify how to create a branch, validate the change locally, open a pull request, and wait for required checks before merge
+

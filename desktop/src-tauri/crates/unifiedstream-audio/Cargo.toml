@@ -8,6 +8,11 @@ rust-version.workspace = true
 [dependencies]
 thiserror.workspace = true
 tracing.workspace = true
+# Deliberately not target-gated, unlike everything else only one platform uses. Sample-rate
+# conversion feeding a fixed-size chunker is arithmetic that fails silently — it drifts rather
+# than breaks — and the runners for the platform that needs it have no audio endpoint. Kept
+# portable so `convert` is covered by `cargo test --workspace` on every leg.
+rubato.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Default-output routing: `pactl` subprocesses and the memo that survives an unclean exit. Only
@@ -19,6 +24,27 @@ tokio.workspace = true
 # the 0.10.0 SPA_ID_INVALID binding regression exposed by PipeWire 1.6 headers.
 # The v0_3_49 feature unlocks Buffer::requested, which sizes each pull to the graph quantum.
 pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs", rev = "03301bc734c9f1d3fb7a064c072458ad00245133", features = ["v0_3_49"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# WASAPI loopback capture of the default render endpoint. Held at the 0.61 line Tauri already
+# resolves, so the build carries one copy of the Windows metadata rather than two.
+#
+# `Win32_System_Com_StructuredStorage` and `Win32_System_Variant` are not used directly: they
+# gate `IMMDevice::Activate`, whose signature names a `PROPVARIANT` this crate always passes as
+# `None`. `Win32_System_Threading` is MMCSS, which registers the polling capture thread as an
+# audio thread so the scheduler does not starve it under load.
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+] }
+# Named directly, though `windows` re-exports it as `windows::core`: the `#[implement]` macro
+# expands to absolute `::windows_core::` paths, so the crate has to be in this manifest for the
+# endpoint notification callback to compile.
+windows-core = "0.61"
 
 [dev-dependencies]
 unifiedstream-net.workspace = true

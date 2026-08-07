@@ -3,11 +3,22 @@
 //! cleanly on exit.
 //!
 //! Run with: `cargo run -p unifiedstream-audio --example pw_smoke`
+//!
+//! Linux only, and gated rather than simply absent elsewhere: `cargo test --workspace` builds
+//! examples, and it now runs on every platform the workspace is verified on.
 
+#[cfg(target_os = "linux")]
 use std::sync::Arc;
 
+#[cfg(target_os = "linux")]
 use unifiedstream_audio::{AudioFormat, AudioSink, JitterBuffer, PipeWireSource};
 
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!("pw_smoke exercises the PipeWire integration and runs on Linux only");
+}
+
+#[cfg(target_os = "linux")]
 fn main() {
     let buffer = Arc::new(JitterBuffer::default());
     let mut source = PipeWireSource::new(Arc::clone(&buffer));
