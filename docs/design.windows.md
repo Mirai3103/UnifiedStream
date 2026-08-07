@@ -1,6 +1,6 @@
 # Windows architecture decisions
 
-Status: accepted, not implemented.
+Status: accepted; W1 and W2 implemented.
 
 This document records the architecture decided for the Windows port of the UnifiedStream desktop application, and the reasoning behind each choice. It is a living document that spans several OpenSpec changes rather than the design of any one of them: an OpenSpec `design.md` is archived with its change, and these decisions must stay visible while the Windows work is carried out.
 
@@ -50,6 +50,7 @@ Two implementation details are mandatory rather than optional, and are easy to m
 
 - **Silent keep-alive stream.** Loopback capture on an idle render endpoint delivers no packets — not silence, nothing. Without mitigation the phone would receive a stalled stream whenever the PC is quiet, and the jitter buffer would have no frames to consume. The desktop must therefore open an additional render client on the same endpoint and play silence continuously for the lifetime of the speaker stream, keeping the audio engine running.
 - **Default-device change notifications.** The user may change the output device while the stream is live. The capture must follow via `IMMNotificationClient` and re-open on the new endpoint rather than continuing to capture a device nothing plays to.
+- **Mix-format conversion is the desktop's job.** `GetMixFormat` decides the format, not the application: shared mode gives whatever the endpoint's mixer runs at, commonly 32-bit float, at whatever rate the user set in the Sound control panel, with as many channels as the endpoint has. The negotiated wire format is fixed at PCM S16LE 48 kHz stereo, so downmixing, resampling, and float-to-integer conversion all happen on the desktop. The alternative — renegotiating the stream at the endpoint's rate — was rejected: it pushes rate handling into the protocol and the Android application to avoid a resampler on one platform's desktop.
 
 ### 3. Camera: a user-mode DirectShow filter, not an AVStream driver
 
@@ -138,13 +139,13 @@ Work from `microsoft/Windows-classic-samples` for the DirectShow base classes an
 | Phase | Scope | Kernel? | Needs signing? |
 | --- | --- | --- | --- |
 | W1 | Decouple platform integrations: traits, factories, unsupported fallbacks, Windows CI leg | No | No |
-| W2 | Speaker over WASAPI loopback, with silent keep-alive and device-change following | No | No |
+| W2 | Speaker over WASAPI loopback, with silent keep-alive and device-change following — **implemented** | No | No |
 | W3 | Camera over the DirectShow filter, with the shared-memory frame transport and installer registration | No | Authenticode only |
 | W4 | Microphone over the project's own WDM audio driver, with the WiX installer | **Yes** | **Yes** |
 
 W1 through W3 produce a Windows build that is genuinely useful — a wireless speaker and a virtual webcam — without spending anything on certificates. The decision in section 5 can therefore be made against a working product rather than against a plan.
 
-W1 is the only phase in this table that has an OpenSpec change today (`decouple-platform-integrations`). W2 through W4 are named here so the sequencing is on the record; each needs its own proposal.
+W1 and W2 have OpenSpec changes (`decouple-platform-integrations` and `add-windows-speaker-capture`). W3 and W4 are named here so the sequencing is on the record; each needs its own proposal.
 
 ## Open questions
 

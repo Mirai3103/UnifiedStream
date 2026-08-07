@@ -76,11 +76,14 @@ jobs:
         run: cargo check --workspace
       - name: Run production Clippy
         run: cargo clippy --workspace --lib --bins -- -D warnings
-      # Not run off Linux: the workspace's integration tests exercise PipeWire and v4l2 loopback
-      # behavior that has no meaning on another platform, and the portable code they share is
-      # already covered by this same suite on the Linux leg.
+      # Run on every leg. The suite is portable: the integration tests exercise the transport and
+      # the portable pipeline, not the system, and each says so in its own header. Platform media
+      # code is verified on the platform it targets rather than only compiled for it.
+      #
+      # The constraint that keeps this true: nothing added to this suite may require an audio or
+      # video device, because the Windows runners have neither. Code that needs a real endpoint is
+      # covered by a manual smoke run instead.
       - name: Run Rust workspace tests
-        if: matrix.os == 'ubuntu-24.04'
         run: cargo test --workspace
 
   android:

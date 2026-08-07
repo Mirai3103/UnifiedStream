@@ -27,9 +27,10 @@ openspec validate --all
 (cd desktop/src-tauri && cargo clippy --workspace --lib --bins -- -D warnings)
 (cd desktop/src-tauri && cargo test --workspace)
 
-# Non-Linux compilation, on a Windows workstation (see the note below)
+# Non-Linux compilation and tests, on a Windows workstation (see the note below)
 (cd desktop/src-tauri && cargo check --workspace)
 (cd desktop/src-tauri && cargo clippy --workspace --lib --bins -- -D warnings)
+(cd desktop/src-tauri && cargo test --workspace)
 
 # Android (requires JDK 17)
 (cd android && ./gradlew testDebugUnitTest assembleDebug)
@@ -42,9 +43,13 @@ The Rust area is verified on two platforms and reports one check per platform, s
 workstation cannot run the whole set. `cargo check` and Clippy for a non-Linux target are
 expected to be unrunnable there: `tauri-build` does host-side work for a Windows target, so
 cross-checking from Linux fails for toolchain reasons rather than code reasons. Leave that leg
-to CI's `rust (windows-latest)` check, or run it on a Windows machine. The reverse also holds —
-a Windows workstation cannot run `cargo test --workspace`, whose integration tests need PipeWire
-and v4l2 loopback.
+to CI's `rust (windows-latest)` check, or run it on a Windows machine.
+
+`cargo test --workspace` runs everywhere, including on a Windows workstation and on the Windows
+CI leg. The suite is portable — the integration tests exercise the transport and the shared
+pipeline rather than the system — and a test that needs an audio or video device would break
+that, since the Windows runners have neither. Code that genuinely needs a real device is
+verified by a manual smoke run instead.
 
 Record the commands you ran in the pull-request template. Explain any relevant check you could not run locally.
 

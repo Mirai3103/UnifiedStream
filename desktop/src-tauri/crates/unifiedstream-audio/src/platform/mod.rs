@@ -9,16 +9,38 @@
 //! Every target compiles. A target with no implementation resolves to [`unsupported`], whose
 //! sink and capture refuse to start with a message naming the platform, and whose
 //! [`audio_routing`] is `None` — absent, not present and broken.
+//!
+//! Support is per integration rather than per platform, and this is the table:
+//!
+//! ```text
+//!               audio_capture      audio_sink        audio_routing
+//!   linux       linux::…           linux::…          Some(linux::…)
+//!   windows     windows::…         unsupported::…    None
+//!   other       unsupported::…     unsupported::…    None
+//! ```
+//!
+//! A partially supported platform names its own gaps in its own module — `windows.rs` re-exports
+//! what it has not written yet — so the table above stays in one place and the gap is explicit
+//! at the point where a later phase closes it. Gating each factory's body separately here would
+//! put three independent tables in the module that exists to have one.
 
 #[cfg(target_os = "linux")]
 mod linux;
-#[cfg(not(target_os = "linux"))]
+// Compiled on every target, not only where nothing is implemented, because a platform with
+// partial support borrows from it. That leaves the rest of the module unreferenced wherever a
+// real implementation exists — hence an allowance carrying its reason here, rather than
+// silencing the lint across the workspace.
+#[cfg_attr(any(target_os = "linux", target_os = "windows"), allow(dead_code))]
 mod unsupported;
+#[cfg(target_os = "windows")]
+mod windows;
 
 #[cfg(target_os = "linux")]
 use linux as imp;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 use unsupported as imp;
+#[cfg(target_os = "windows")]
+use windows as imp;
 
 use std::path::Path;
 use std::sync::Arc;

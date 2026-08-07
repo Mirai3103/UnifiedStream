@@ -7,6 +7,7 @@
 #![deny(missing_docs)]
 
 mod capture;
+mod convert;
 mod jitter;
 #[cfg(target_os = "linux")]
 mod pipewire_sink;
@@ -17,6 +18,7 @@ pub mod platform;
 mod routing;
 
 pub use capture::FrameChunker;
+pub use convert::{AudioConverter, SampleType, SourceFormat};
 pub use jitter::{JitterBuffer, JitterStats, JITTER_CAP_FRAMES, JITTER_TARGET_FRAMES};
 #[cfg(target_os = "linux")]
 pub use pipewire_sink::{PipeWireSpeakerSink, SINK_NODE_ID, SINK_NODE_NAME};

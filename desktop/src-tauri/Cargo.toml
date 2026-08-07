@@ -24,6 +24,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 hostname = "0.4"
+# Sample-rate conversion for platform audio sources that do not run at the negotiated rate.
+# Held at 0.16 because 1.0 and later raise the minimum supported Rust version above this
+# workspace's 1.82; pure Rust either way, so no system dependency reaches any target.
+rubato = "0.16"
 
 [workspace.lints.clippy]
 # The transport parses untrusted network input; a panic there is a remote DoS.
