@@ -4569,6 +4569,7 @@ dependencies = [
  "tracing",
  "unifiedstream-net",
  "v4l",
+ "windows",
  "zune-core",
  "zune-jpeg",
 ]

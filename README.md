@@ -7,7 +7,7 @@ Use an Android phone as a webcam, microphone, and wireless speaker for a Linux P
 
 ## MVP features
 
-- **Virtual camera:** Android camera to a Linux `v4l2loopback` device.
+- **Virtual camera:** Android camera to a webcam other applications can select. How that camera is presented is a platform choice: Linux writes frames to a `v4l2loopback` device the kernel offers, while a Windows build hands them to a filter each application loads for itself.
 - **Virtual microphone:** Android microphone to a PipeWire source on Linux.
 - **Wireless speaker:** PC system audio to the Android speaker or connected headphones. How that audio is obtained is a platform choice: Linux routes it through a PipeWire virtual sink it creates and makes the default output, while a Windows build captures the existing default output directly, creating no device and changing nothing the user selected.
 - **Local discovery:** automatic mDNS discovery with a manual IP-address fallback.
