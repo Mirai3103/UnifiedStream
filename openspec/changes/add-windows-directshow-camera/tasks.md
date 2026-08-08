@@ -50,6 +50,9 @@
 - [x] 5.3 Have it attach to the real named section, read until the producer stops, and verify every accepted frame byte-for-byte against the published pattern, reporting frames accepted, rejected as torn, and lost to being lapped
 - [x] 5.4 Make it exit non-zero on any frame accepted with wrong contents, and on zero frames accepted — a test that accepted nothing proves nothing
 - [x] 5.5 Wire it into CI against `cargo run -p unifiedstream-video --example ring_smoke` in publish-only mode. **This is the only thing in either build that observes both halves at once**: a wrong memory ordering in the C++ consumer compiles cleanly, passes every static assertion in task 2.3, and tears rarely enough to reach users
+- [x] 5.6 Implement `IAMStreamConfig` on the output pin — the capability list, `SetFormat`, and `GetFormat`. Found by manual verification, not by any check here: Chromium's `VideoCaptureDeviceWin` queries it before anything else and abandons the device when the query fails, so the camera enumerated in Discord and Chrome and opened in neither, showing a black picture and `NotReadableError`. `IKsPropertySet` alone is what a *graph builder* needs; this is what an *application* needs
+- [x] 5.7 Add `windows/dshow-camera/filter_conform.exe`, checking the COM surface from outside through COM alone — no strmbase, no shared header with the filter, the DLL loaded by path so it needs no administrator. A check that reached into the filter's own constants could not have caught 5.6, because the fault was an interface the filter never claimed to implement. Verified to fail against the pre-fix binary and pass against the fixed one
+- [x] 5.8 Wire `filter_conform` into CI ahead of the frame-level test: if the interfaces are wrong, whether the pixels are right does not matter yet
 
 ## 6. Build and quality gates
 

@@ -22,6 +22,25 @@ Each installed architecture SHALL present the camera under the same user-visible
 - **THEN** the desktop reports the installation as incomplete rather than as usable
 - **AND** the guidance names the architecture that is missing and the command that installs it
 
+### Requirement: The component answers the platform's standard capability negotiation
+
+Applications discover what a camera offers through whatever interface the platform defines for that purpose, and select a format through the same one. They do not inspect the component directly. The component SHALL implement that interface: it SHALL report the complete set of geometries and frame rates it offers, SHALL accept any selection drawn from that set, and SHALL then deliver frames matching the selection.
+
+Answering only the platform's *enumeration* interface is not sufficient and is a distinct failure from not being installed. A component that enumerates but cannot negotiate appears in every application's device list and opens in none of them; the user sees a camera that is present and permanently broken, and the application reports a device error indistinguishable from a camera another program is holding.
+
+#### Scenario: An application reads the offered formats
+
+- **WHEN** an application queries the component for the formats it supports
+- **THEN** the component reports every geometry it offers, each with the frame rate it will deliver
+- **AND** each reported entry describes the same format the component would deliver if that entry were selected
+
+#### Scenario: An application selects an offered format
+
+- **WHEN** an application selects one of the reported formats before starting the stream
+- **THEN** the component accepts the selection
+- **AND** reporting the current format afterwards returns the selected one
+- **AND** every frame delivered matches the selected geometry
+
 ### Requirement: The component never stalls the application hosting it
 
 The component runs inside an application it does not control and MUST NOT make that application's fate depend on the desktop's. It SHALL continue to satisfy its host's requests for video whatever the producer is doing, and SHALL NOT wait indefinitely on the producer, on a shared resource the producer holds, or on the arrival of a frame.

@@ -85,6 +85,9 @@ STDMETHODIMP CUnifiedStreamCameraStream::NonDelegatingQueryInterface(REFIID riid
     if (riid == IID_IKsPropertySet) {
         return GetInterface(static_cast<IKsPropertySet*>(this), ppv);
     }
+    if (riid == IID_IAMStreamConfig) {
+        return GetInterface(static_cast<IAMStreamConfig*>(this), ppv);
+    }
     return CSourceStream::NonDelegatingQueryInterface(riid, ppv);
 }
 
@@ -135,17 +138,20 @@ STDMETHODIMP CUnifiedStreamCameraStream::QuerySupported(REFGUID set, DWORD id, D
 // Media types — answered without consulting the ring
 // ---------------------------------------------------------------------------
 
-HRESULT CUnifiedStreamCameraStream::GetMediaType(int position, CMediaType* media_type) {
-    CheckPointer(media_type, E_POINTER);
-    if (position < 0) {
-        return E_INVALIDARG;
+int CUnifiedStreamCameraStream::GeometryIndexAt(int position) const noexcept {
+    // The selected geometry first, then the rest in their fixed order. Connection walks this list
+    // and takes the first type the peer accepts, so putting the selection at the front is what
+    // makes `SetFormat` decide the resolution rather than merely record a preference.
+    if (position == 0) {
+        return selected_;
     }
-    if (position >= kOfferedCount) {
-        return VFW_S_NO_MORE_ITEMS;
-    }
+    return position <= selected_ ? position - 1 : position;
+}
 
-    const auto geometry = kOfferedGeometries[position];
-    const DWORD image_bytes = static_cast<DWORD>(I420Bytes(geometry.width, geometry.height));
+HRESULT CUnifiedStreamCameraStream::BuildMediaType(std::uint32_t width, std::uint32_t height,
+                                                   CMediaType* media_type) {
+    CheckPointer(media_type, E_POINTER);
+    const DWORD image_bytes = static_cast<DWORD>(I420Bytes(width, height));
 
     auto* info = reinterpret_cast<VIDEOINFOHEADER*>(
         media_type->AllocFormatBuffer(sizeof(VIDEOINFOHEADER)));
@@ -155,10 +161,10 @@ HRESULT CUnifiedStreamCameraStream::GetMediaType(int position, CMediaType* media
     ZeroMemory(info, sizeof(VIDEOINFOHEADER));
 
     info->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    info->bmiHeader.biWidth = static_cast<LONG>(geometry.width);
+    info->bmiHeader.biWidth = static_cast<LONG>(width);
     // Positive: planar YUV is defined top-down, and a negative height here is how a filter tells a
     // renderer the rows of an RGB bitmap are the other way up.
-    info->bmiHeader.biHeight = static_cast<LONG>(geometry.height);
+    info->bmiHeader.biHeight = static_cast<LONG>(height);
     info->bmiHeader.biPlanes = 1;
     info->bmiHeader.biBitCount = 12;
     info->bmiHeader.biCompression = MAKEFOURCC('I', '4', '2', '0');
@@ -173,6 +179,145 @@ HRESULT CUnifiedStreamCameraStream::GetMediaType(int position, CMediaType* media
     media_type->SetSubtype(&MEDIASUBTYPE_I420);
     media_type->SetTemporalCompression(FALSE);
     media_type->SetSampleSize(image_bytes);
+    return S_OK;
+}
+
+HRESULT CUnifiedStreamCameraStream::GetMediaType(int position, CMediaType* media_type) {
+    CheckPointer(media_type, E_POINTER);
+    if (position < 0) {
+        return E_INVALIDARG;
+    }
+    if (position >= kOfferedCount) {
+        return VFW_S_NO_MORE_ITEMS;
+    }
+    const auto geometry = kOfferedGeometries[GeometryIndexAt(position)];
+    return BuildMediaType(geometry.width, geometry.height, media_type);
+}
+
+// ---------------------------------------------------------------------------
+// IAMStreamConfig — the interface capture applications actually ask with
+// ---------------------------------------------------------------------------
+
+STDMETHODIMP CUnifiedStreamCameraStream::GetNumberOfCapabilities(int* count, int* size) {
+    CheckPointer(count, E_POINTER);
+    CheckPointer(size, E_POINTER);
+    *count = kOfferedCount;
+    *size = sizeof(VIDEO_STREAM_CONFIG_CAPS);
+    return S_OK;
+}
+
+STDMETHODIMP CUnifiedStreamCameraStream::GetStreamCaps(int index, AM_MEDIA_TYPE** media_type,
+                                                       BYTE* caps) {
+    CheckPointer(media_type, E_POINTER);
+    CheckPointer(caps, E_POINTER);
+    if (index < 0 || index >= kOfferedCount) {
+        return S_FALSE;
+    }
+
+    // The fixed order, not the selected-first order `GetMediaType` uses: this is a capability list,
+    // and an application that reads index 2 twice must get the same answer both times even if it
+    // called `SetFormat` in between.
+    const auto geometry = kOfferedGeometries[index];
+
+    CMediaType built;
+    const HRESULT hr = BuildMediaType(geometry.width, geometry.height, &built);
+    if (FAILED(hr)) {
+        return hr;
+    }
+    *media_type = CreateMediaType(&built);
+    if (*media_type == nullptr) {
+        return E_OUTOFMEMORY;
+    }
+
+    const SIZE dimensions{static_cast<LONG>(geometry.width), static_cast<LONG>(geometry.height)};
+    const DWORD image_bytes = static_cast<DWORD>(I420Bytes(geometry.width, geometry.height));
+
+    auto* config = reinterpret_cast<VIDEO_STREAM_CONFIG_CAPS*>(caps);
+    ZeroMemory(config, sizeof(VIDEO_STREAM_CONFIG_CAPS));
+    config->guid = FORMAT_VideoInfo;
+    config->VideoStandard = AnalogVideo_None;
+    config->InputSize = dimensions;
+    // One fixed size per entry, and no cropping or stretching: this filter scales in software to
+    // the geometry the graph connected at and offers nothing else at that index.
+    config->MinCroppingSize = dimensions;
+    config->MaxCroppingSize = dimensions;
+    config->CropGranularityX = 1;
+    config->CropGranularityY = 1;
+    config->CropAlignX = 1;
+    config->CropAlignY = 1;
+    config->MinOutputSize = dimensions;
+    config->MaxOutputSize = dimensions;
+    config->OutputGranularityX = 1;
+    config->OutputGranularityY = 1;
+    config->MinFrameInterval = kFrameLength;
+    config->MaxFrameInterval = kFrameLength;
+    config->MinBitsPerSecond = static_cast<LONG>(image_bytes * 8 * 30);
+    config->MaxBitsPerSecond = config->MinBitsPerSecond;
+    return S_OK;
+}
+
+STDMETHODIMP CUnifiedStreamCameraStream::GetFormat(AM_MEDIA_TYPE** media_type) {
+    CheckPointer(media_type, E_POINTER);
+    CAutoLock lock(m_pFilter->pStateLock());
+
+    // Once connected the answer is the connection, which is the only thing the caller can act on.
+    // Before that it is the selection, which is what the connection will be.
+    if (IsConnected()) {
+        *media_type = CreateMediaType(&m_mt);
+        return *media_type == nullptr ? E_OUTOFMEMORY : S_OK;
+    }
+
+    CMediaType built;
+    const HRESULT hr =
+        BuildMediaType(kOfferedGeometries[selected_].width, kOfferedGeometries[selected_].height,
+                       &built);
+    if (FAILED(hr)) {
+        return hr;
+    }
+    *media_type = CreateMediaType(&built);
+    return *media_type == nullptr ? E_OUTOFMEMORY : S_OK;
+}
+
+STDMETHODIMP CUnifiedStreamCameraStream::SetFormat(AM_MEDIA_TYPE* media_type) {
+    CheckPointer(media_type, E_POINTER);
+    CAutoLock lock(m_pFilter->pStateLock());
+
+    // Changing the geometry mid-stream would resize every buffer `SetMediaType` sized, on the
+    // streaming thread, in someone else's process. Applications set the format before they run the
+    // graph; one that does not is told so rather than served a reallocation.
+    if (m_pFilter->IsActive()) {
+        return VFW_E_WRONG_STATE;
+    }
+
+    const CMediaType requested(*media_type);
+    if (CheckMediaType(&requested) != S_OK) {
+        return VFW_E_INVALIDMEDIATYPE;
+    }
+
+    const auto* info = reinterpret_cast<const VIDEOINFOHEADER*>(requested.Format());
+    for (int i = 0; i < kOfferedCount; ++i) {
+        if (static_cast<std::uint32_t>(info->bmiHeader.biWidth) == kOfferedGeometries[i].width &&
+            static_cast<std::uint32_t>(info->bmiHeader.biHeight) == kOfferedGeometries[i].height) {
+            selected_ = i;
+            break;
+        }
+    }
+
+    // A peer that is already connected has to agree before the connection can be rebuilt around the
+    // new geometry; if it will not, the selection above still stands for the next connection.
+    if (IsConnected()) {
+        if (m_Connected->QueryAccept(media_type) != S_OK) {
+            return VFW_E_INVALIDMEDIATYPE;
+        }
+        IFilterGraph* const graph = m_pFilter->GetFilterGraph();
+        if (graph != nullptr) {
+            const HRESULT hr = graph->Reconnect(this);
+            if (FAILED(hr)) {
+                return hr;
+            }
+        }
+    }
+    m_mt = requested;
     return S_OK;
 }
 

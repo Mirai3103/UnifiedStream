@@ -53,7 +53,9 @@ private:
 };
 
 /// The one output pin, and the whole of the streaming behaviour.
-class CUnifiedStreamCameraStream : public CSourceStream, public IKsPropertySet {
+class CUnifiedStreamCameraStream : public CSourceStream,
+                                   public IKsPropertySet,
+                                   public IAMStreamConfig {
 public:
     CUnifiedStreamCameraStream(HRESULT* hr, CUnifiedStreamCamera* filter);
     ~CUnifiedStreamCameraStream() override;
@@ -71,6 +73,21 @@ public:
     STDMETHODIMP Get(REFGUID set, DWORD id, LPVOID instance, DWORD instance_bytes, LPVOID property,
                      DWORD property_bytes, DWORD* returned) override;
     STDMETHODIMP QuerySupported(REFGUID set, DWORD id, DWORD* support) override;
+
+    // --- IAMStreamConfig ----------------------------------------------------
+    //
+    // How a capture application discovers what a camera can do. Enumerating the pin's media types
+    // is the other way, and it is the way this filter was originally written for — but it is not
+    // the way the applications this filter exists for actually ask.
+    //
+    // Chromium's `VideoCaptureDeviceWin` queries this interface on the capture pin and abandons the
+    // device when the query fails, which is every Electron application and every Chromium browser:
+    // the camera still *enumerates*, so it appears in the device list, and then never opens. The
+    // symptom is a black picture or `NotReadableError`, with nothing logged anywhere.
+    STDMETHODIMP SetFormat(AM_MEDIA_TYPE* media_type) override;
+    STDMETHODIMP GetFormat(AM_MEDIA_TYPE** media_type) override;
+    STDMETHODIMP GetNumberOfCapabilities(int* count, int* size) override;
+    STDMETHODIMP GetStreamCaps(int index, AM_MEDIA_TYPE** media_type, BYTE* caps) override;
 
 protected:
     // --- CSourceStream / CBaseOutputPin / CBasePin --------------------------
@@ -100,6 +117,21 @@ private:
     /// Compute the sample's start and end from the ring timestamp, kept monotonic in stream time.
     void TimeSample(bool have_new_frame, std::uint64_t timestamp_us, REFERENCE_TIME* start,
                     REFERENCE_TIME* end) noexcept;
+
+    /// Fill `media_type` with the fixed description of one offered geometry. The single place a
+    /// media type is built, so `GetMediaType` and `GetStreamCaps` cannot describe the same
+    /// geometry differently.
+    static HRESULT BuildMediaType(std::uint32_t width, std::uint32_t height,
+                                  CMediaType* media_type);
+
+    /// The geometry `GetMediaType` should offer at `position`, which is the selected one first.
+    /// Connection takes the first type the peer accepts, so this is what makes `SetFormat` mean
+    /// anything.
+    [[nodiscard]] int GeometryIndexAt(int position) const noexcept;
+
+    /// Index into `kOfferedGeometries` of the format an application asked for through
+    /// `IAMStreamConfig::SetFormat`, or the default until one does.
+    int selected_ = 0;
 
     // Geometry the graph connected at, fixed for the life of the connection.
     std::uint32_t width_ = 0;

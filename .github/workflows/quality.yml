@@ -148,6 +148,25 @@ jobs:
             }
             Write-Host "$dll imports: $($imports -join ', ')"
           }
+      - name: Check the COM surface applications actually use
+        # A filter can deliver perfect frames into a graph built by hand and still be unopenable by
+        # every real application. That is not hypothetical: the pin shipped without IAMStreamConfig,
+        # which Chromium queries before anything else and gives up on, so the camera enumerated in
+        # Discord and Chrome and opened in neither. Nothing else here noticed — the graph a test
+        # harness builds with ConnectDirect never asks for it.
+        #
+        # This runs before the frame-level test on purpose: if the interfaces are wrong, whether the
+        # pixels are right does not matter yet.
+        shell: pwsh
+        run: |
+          $pairs = @(
+            @('windows\x64\Release\filter_conform.exe',   'windows\x64\Release\UnifiedStreamCamera64.dll'),
+            @('windows\Win32\Release\filter_conform.exe', 'windows\Win32\Release\UnifiedStreamCamera32.dll')
+          )
+          foreach ($pair in $pairs) {
+            & $pair[0] $pair[1]
+            if ($LASTEXITCODE -ne 0) { throw "$($pair[1]) does not present a usable capture surface" }
+          }
       - name: Build the conformance publisher
         working-directory: desktop/src-tauri
         run: cargo build -p unifiedstream-video --example ring_smoke --release

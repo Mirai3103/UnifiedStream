@@ -85,6 +85,19 @@ It exits non-zero if any frame was accepted with wrong contents, and if no frame
 all. This is the only test in either build that observes both halves of the frame transport at
 once, so it is the one to run after touching either.
 
+`filter_conform` is the other half of the story, and needs no producer and no elevation:
+
+```powershell
+windows\x64\Release\filter_conform.exe windows\x64\Release\UnifiedStreamCamera64.dll
+windows\Win32\Release\filter_conform.exe windows\Win32\Release\UnifiedStreamCamera32.dll
+```
+
+It checks the COM surface a capture application touches before it ever asks for a frame — the pin
+category, the capability list, and format selection — entirely from outside, through COM. Run it
+after touching anything in `filter.cpp`. A filter can deliver perfect frames into a graph you build
+yourself and still be unopenable by every real application; that is not hypothetical, it is why this
+program exists.
+
 Registering the filter is not part of building it. `regsvr32` from an elevated prompt, one
 architecture at a time — the desktop's setup hint names the exact command for whichever half is
 missing.
