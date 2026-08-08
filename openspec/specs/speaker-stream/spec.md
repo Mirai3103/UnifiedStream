@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The end-to-end wireless speaker: desktop-side system audio capture via a PipeWire virtual sink, the speaker payload format on stream ID 3, phone-side decoding, jitter buffering, and playback, speaker controls (toggle, mute, volume, system routing), and level indication in both UIs.
+The end-to-end wireless speaker: desktop-side system audio capture, the speaker payload format on stream ID 3, phone-side decoding, jitter buffering, and playback, speaker controls (toggle, mute, volume, system routing), and level indication in both UIs. How the audio is captured is a platform concern — a virtual sink the desktop creates and makes the default output, as on Linux, or a direct capture of the existing default output, as on Windows.
 
 See `openspec/specs/protocol.md` §3.9 and §6 for the normative wire format these requirements are implemented against.
 ## Requirements

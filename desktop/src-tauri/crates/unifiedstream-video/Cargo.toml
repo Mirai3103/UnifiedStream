@@ -19,6 +19,29 @@ zune-core = "0.4"
 # Raw v4l2 ioctls (pregenerated bindings, no libv4l linkage).
 v4l = { version = "0.14", default-features = false, features = ["v4l2"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+# The shared-memory section the virtual camera filter reads frames out of, the mutex that guards
+# its initialisation, and the registry probe that decides whether any filter is installed at all.
+# Held at the same 0.61 line `unifiedstream-audio` uses, so the build carries one copy of the
+# Windows metadata rather than two.
+#
+# `Win32_Security` is not for access control in the usual sense: it gates
+# `ConvertStringSecurityDescriptorToSecurityDescriptorW`, which is how the section acquires the
+# mandatory label that lets a sandboxed consuming process open a mapping this desktop created.
+# `Win32_System_Memory` is the file mapping, `Win32_System_Threading` the named init mutex,
+# `Win32_System_Registry` the availability probe, and `Win32_System_SystemInformation` supplies
+# `GetTickCount64` — the only clock every process in the session agrees on, which is what the
+# heartbeat has to be measured in.
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Memory",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 jpeg-encoder = "0.6"
 unifiedstream-net.workspace = true

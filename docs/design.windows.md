@@ -60,11 +60,12 @@ The alternative considered was extending the audio driver of decision 4 into a f
 
 It is rejected under decision 1. An AVStream capture driver is among the harder things to write correctly on Windows, its failure mode is a bug check rather than an application crash, and it would be carrying the project's highest-risk component for a feature that has a working user-mode answer. Trading roughly ten per cent of application coverage for not writing a kernel-mode video capture driver is the right side of that bargain, and OBS's virtual camera demonstrates that the DirectShow approach is sufficient in practice.
 
-`MFCreateVirtualCamera` was also considered and rejected: it is the modern, officially supported path and it works everywhere, but it requires Windows 11 build 22000 or later and an MSIX-packaged application. Dropping Windows 10 is not acceptable, and the primary development machine for this project runs Windows 10.
+`MFCreateVirtualCamera` was also considered and rejected: it is the modern, officially supported path and it works everywhere, but it requires Windows 11 build 22000 or later and an MSIX-packaged application. Dropping Windows 10 is not acceptable, and the primary development machine for this project runs Windows 10. The re-check this decision called for before the filter was written has now been made, and the answer is unchanged — see the open questions.
 
-Four consequences must be planned for, not discovered:
+Five consequences must be planned for, not discovered:
 
 - **The filter runs inside the consuming application's process.** This is the largest structural difference from `v4l2loopback`, where the desktop simply writes to a device node. When a user selects the virtual camera in a video-conferencing application, that application loads the DLL into its own address space. Frames must therefore cross a process boundary: a shared-memory ring buffer with a named event for signalling and a named mutex for the header. The desktop application is the producer; each filter instance is a consumer.
+- **The desktop keeps the decoder, and the boundary carries decoded frames.** `add-windows-camera-frame-transport` settles the shape of that crossing: a versioned shared-memory ring carrying decoded I420, four page-aligned slots behind a per-slot seqlock, no event and no steady-state lock. The desktop decodes JPEG with the existing portable decoder and publishes raw planar frames, so the component that runs inside other applications' processes never contains a decoder fed by network-originated bytes — the largest crash and attack surface in this feature stays on our side of the boundary, under decision 1. It also keeps `decode_failures()` countable by the producer, which is what makes the trait's 0-fps contract enforceable on this platform. The cost is bandwidth: 1280x720 I420 at 30 fps is roughly 40 MB/s of `memcpy` between resident pages, and DirectShow consumers want an uncompressed subtype anyway.
 - **Both architectures are required.** A 32-bit application can only load a 32-bit filter. The installer registers an x86 DLL and an x64 DLL.
 - **Registration needs administrator rights**, and unregistration must be equally complete. `regsvr32` at install, `regsvr32 /u` at uninstall; a leftover CLSID leaves a broken camera in every application's device list.
 - **Coverage is broad but not universal.** Zoom, Discord, OBS, Skype, and Chromium-based browsers enumerate DirectShow devices. UWP and Store applications, and applications that use Media Foundation exclusively, do not. This limitation is documented for users in the same way the `v4l2loopback` prerequisite is documented on Linux.
@@ -140,15 +141,25 @@ Work from `microsoft/Windows-classic-samples` for the DirectShow base classes an
 | --- | --- | --- | --- |
 | W1 | Decouple platform integrations: traits, factories, unsupported fallbacks, Windows CI leg | No | No |
 | W2 | Speaker over WASAPI loopback, with silent keep-alive and device-change following — **implemented** | No | No |
-| W3 | Camera over the DirectShow filter, with the shared-memory frame transport and installer registration | No | Authenticode only |
+| W3 | Camera over the DirectShow filter, with the shared-memory frame transport and installer registration — **transport implemented**, filter outstanding | No | Authenticode only |
 | W4 | Microphone over the project's own WDM audio driver, with the WiX installer | **Yes** | **Yes** |
 
 W1 through W3 produce a Windows build that is genuinely useful — a wireless speaker and a virtual webcam — without spending anything on certificates. The decision in section 5 can therefore be made against a working product rather than against a plan.
 
-W1 and W2 have OpenSpec changes (`decouple-platform-integrations` and `add-windows-speaker-capture`). W3 and W4 are named here so the sequencing is on the record; each needs its own proposal.
+W1 and W2 have OpenSpec changes (`decouple-platform-integrations` and `add-windows-speaker-capture`). W4 is named here so the sequencing is on the record and needs its own proposal.
+
+W3 is delivered as two changes, because the camera is the only feature whose frames leave the desktop's address space and the crossing is code that fails silently — a torn read is a corrupt frame, not a crash:
+
+- `add-windows-camera-frame-transport` builds and proves the transport alone, in Rust, where the existing test suite already runs on both CI legs. It ships the versioned shared-memory contract, the Windows section and its security descriptor, the availability probe, and a `VideoSink` that refuses the stream while no filter is registered and names the command that installs one.
+- `add-windows-directshow-camera` writes the C++ filter that consumes it, against a contract that is already specified and already tested, and brings with it the `windows/` tree, MSBuild, the native CI area, and the registration tooling.
+
+Writing the ring at the same time as the first C++ in this repository, a new toolchain, and a new CI area would have meant debugging all of them against each other.
 
 ## Open questions
 
 - Which of the three signing options in decision 5 is taken, and by when. Nothing in W1 to W3 depends on the answer.
 - Whether the cable-style driver's extra playback endpoint can be hidden from the user's output device list, or whether the capture-only variant is required to achieve that. Deferred to W4.
-- Whether Windows 10 support is still required at the time W3 is implemented. If it is not, `MFCreateVirtualCamera` becomes available and decision 3 should be revisited before the DirectShow filter is written rather than after.
+
+Closed:
+
+- ~~Whether Windows 10 support is still required at the time W3 is implemented.~~ Re-checked when `add-windows-camera-frame-transport` was written, and decision 3 stands unchanged. The development machine for this project runs Windows 10, so `MFCreateVirtualCamera` is not merely a platform floor to raise but a path that cannot be exercised at all here; it would additionally require repackaging the application as MSIX, which decision 6 does not plan for. The DirectShow filter is the path.

@@ -1,13 +1,16 @@
-//! UnifiedStream video integration: MJPEG decoding and the v4l2loopback virtual camera.
+//! UnifiedStream video integration: MJPEG decoding and the platform's virtual camera.
 //!
 //! Kept separate from `unifiedstream-net` so the wire protocol stays free of system
-//! dependencies — this crate is the only place that touches v4l2. The decode path is pure
-//! Rust and platform-independent; only the loopback device module is Linux-only.
+//! dependencies — this crate is the only place that touches a camera device. The decode path is
+//! pure Rust and platform-independent, and so is [`transport`], the frame contract with a virtual
+//! camera that consuming applications load into their own processes. Only the loopback device
+//! module and the platform implementations are target-gated.
 
 #![deny(missing_docs)]
 
 mod decode;
 pub mod platform;
+pub mod transport;
 #[cfg(target_os = "linux")]
 mod v4l2;
 

@@ -149,8 +149,32 @@ describe("desktop application shell", () => {
     expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
   });
 
+  it("offers the registration command where the platform's camera component is not installed", async () => {
+    // The platform has an implementation; what it lacks is the component that presents the camera
+    // to other applications. That is a missing prerequisite with a remedy, not an unimplemented
+    // platform, and the UI must show the command either way without knowing which platform it is.
+    // Absolute paths and a single invocation, because the platform expands the variables before
+    // handing the command over: the user pastes this into whatever elevated prompt they opened,
+    // and %VAR% is literal text in PowerShell while && is a parse error in Windows PowerShell 5.1.
+    const command = 'regsvr32 "C:\\Program Files\\UnifiedStream\\UnifiedStreamCamera64.dll"';
+    const message = `the UnifiedStream Camera filter is not installed — register it from an elevated command prompt with: ${command} (the 32-bit filter is needed too, and the desktop names it once this one is registered)`;
+    await renderWith({
+      camera: {
+        ...snapshot.camera,
+        error: `virtual camera unavailable: ${message}`,
+        hint: { message, command },
+      },
+    });
+
+    expect(screen.getByText(`virtual camera unavailable: ${message}`)).toBeInTheDocument();
+    expect(screen.getByText(command)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
+  });
+
   it("shows a setup hint with no command as message alone", async () => {
-    const message = "windows has no virtual camera implementation in this build";
+    // Still required: a platform that genuinely has no implementation names no remedy, and the UI
+    // must render guidance without a copyable command rather than an empty box.
+    const message = "freebsd has no virtual camera implementation in this build";
     await renderWith({
       camera: {
         ...snapshot.camera,
