@@ -1,0 +1,13 @@
+; Exports of the UnifiedStream DirectShow camera filter.
+;
+; A .def file rather than __declspec(dllexport), so both architectures export the same four
+; undecorated names: the x86 build would otherwise decorate the __stdcall entry points and
+; regsvr32 would report the DLL as not self-registering.
+
+LIBRARY
+
+EXPORTS
+    DllGetClassObject   PRIVATE
+    DllCanUnloadNow     PRIVATE
+    DllRegisterServer   PRIVATE
+    DllUnregisterServer PRIVATE

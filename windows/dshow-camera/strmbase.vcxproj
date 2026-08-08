@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The vendored DirectShow base classes, built as a static library.
+
+  Two settings here are deliberate and are explained in windows/third_party/strmbase/README.md:
+  the warning level is relaxed and warnings are not errors, because this is 1990s-era code compiled
+  against a 2020s SDK and holding it to the filter's own settings would mean patching upstream; and
+  ConformanceMode is off, because /permissive- rejects several constructs these sources rely on.
+-->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{A1B2C3D4-0001-4E5F-9A0B-000000000001}</ProjectGuid>
+    <RootNamespace>strmbase</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'!='Debug'">false</UseDebugLibraries>
+    <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <OutDir>$(MSBuildThisFileDirectory)..\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\obj\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <!--
+        4267/4244/4302/4311/4312: 64-bit conversion diagnostics that did not exist when these
+        sources were written. 4996/4995: CRT and Win32 calls deprecated since. 4189/4100/4127/4245/
+        4389/4456/4457/4459/4701/4703: level-3 and level-4 noise from the same era.
+      -->
+      <DisableSpecificWarnings>4267;4244;4302;4311;4312;4996;4995;4189;4100;4127;4245;4389;4456;4457;4459;4701;4703;4838</DisableSpecificWarnings>
+      <ConformanceMode>false</ConformanceMode>
+      <SDLCheck>false</SDLCheck>
+      <!-- These sources include their own headers as <streams.h>, so the directory must be on the
+           search path rather than found relative to the file. -->
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\third_party\strmbase;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;STRICT;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">DEBUG;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)'!='Debug'">NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!--
+        Statically linked CRT. This library ends up inside a DLL loaded into Zoom, Chrome, and
+        Discord; depending on a redistributable those processes may not have is a load failure the
+        user experiences as the camera being broken.
+      -->
+      <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(Configuration)'!='Debug'">MultiThreaded</RuntimeLibrary>
+      <Optimization Condition="'$(Configuration)'=='Debug'">Disabled</Optimization>
+      <Optimization Condition="'$(Configuration)'!='Debug'">MaxSpeed</Optimization>
+      <FunctionLevelLinking Condition="'$(Configuration)'!='Debug'">true</FunctionLevelLinking>
+      <IntrinsicFunctions Condition="'$(Configuration)'!='Debug'">true</IntrinsicFunctions>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="..\third_party\strmbase\amextra.cpp" />
+    <ClCompile Include="..\third_party\strmbase\amfilter.cpp" />
+    <ClCompile Include="..\third_party\strmbase\amvideo.cpp" />
+    <ClCompile Include="..\third_party\strmbase\arithutil.cpp" />
+    <ClCompile Include="..\third_party\strmbase\combase.cpp" />
+    <ClCompile Include="..\third_party\strmbase\cprop.cpp" />
+    <ClCompile Include="..\third_party\strmbase\ctlutil.cpp" />
+    <ClCompile Include="..\third_party\strmbase\ddmm.cpp" />
+    <ClCompile Include="..\third_party\strmbase\dllentry.cpp" />
+    <ClCompile Include="..\third_party\strmbase\dllsetup.cpp" />
+    <ClCompile Include="..\third_party\strmbase\mtype.cpp" />
+    <ClCompile Include="..\third_party\strmbase\outputq.cpp" />
+    <ClCompile Include="..\third_party\strmbase\perflog.cpp" />
+    <ClCompile Include="..\third_party\strmbase\pstream.cpp" />
+    <ClCompile Include="..\third_party\strmbase\pullpin.cpp" />
+    <ClCompile Include="..\third_party\strmbase\refclock.cpp" />
+    <ClCompile Include="..\third_party\strmbase\renbase.cpp" />
+    <ClCompile Include="..\third_party\strmbase\schedule.cpp" />
+    <ClCompile Include="..\third_party\strmbase\seekpt.cpp" />
+    <ClCompile Include="..\third_party\strmbase\source.cpp" />
+    <ClCompile Include="..\third_party\strmbase\strmctl.cpp" />
+    <ClCompile Include="..\third_party\strmbase\sysclock.cpp" />
+    <ClCompile Include="..\third_party\strmbase\transfrm.cpp" />
+    <ClCompile Include="..\third_party\strmbase\transip.cpp" />
+    <ClCompile Include="..\third_party\strmbase\videoctl.cpp" />
+    <ClCompile Include="..\third_party\strmbase\vtrans.cpp" />
+    <ClCompile Include="..\third_party\strmbase\winctrl.cpp" />
+    <ClCompile Include="..\third_party\strmbase\winutil.cpp" />
+    <ClCompile Include="..\third_party\strmbase\wxdebug.cpp" />
+    <ClCompile Include="..\third_party\strmbase\wxlist.cpp" />
+    <ClCompile Include="..\third_party\strmbase\wxutil.cpp" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

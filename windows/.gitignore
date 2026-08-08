@@ -1,0 +1,9 @@
+# MSBuild output. `OutDir` is windows/$(Platform)/$(Configuration)/ and `IntDir` is windows/obj/.
+/obj/
+/x64/
+/Win32/
+
+# Visual Studio local state
+.vs/
+*.user
+*.aps

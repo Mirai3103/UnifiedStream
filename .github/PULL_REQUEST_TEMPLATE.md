@@ -14,6 +14,7 @@
 
 - [ ] `openspec validate --all`
 - [ ] Rust formatting, production Clippy, and workspace tests
+- [ ] Windows native: MSBuild for x64 and Win32, and the cross-toolchain conformance test
 - [ ] Android debug unit tests and debug APK assembly
 - [ ] Frozen-lockfile frontend install and production build
 - [ ] Other:

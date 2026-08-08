@@ -59,6 +59,32 @@ Then restart the target application after enabling the Camera stream.
 
 **Undo:** stop the stream and run `sudo modprobe -r v4l2loopback` if the module was loaded only for this test.
 
+## UnifiedStream Camera is missing on a Windows build
+
+**Diagnose**
+
+```powershell
+Get-ItemProperty 'HKLM:\SOFTWARE\Classes\CLSID\{6D8DD393-D871-4498-A24F-4AFFEACFC106}\InprocServer32'
+Get-ItemProperty 'HKLM:\SOFTWARE\Classes\WOW6432Node\CLSID\{6D8DD393-D871-4498-A24F-4AFFEACFC106}\InprocServer32'
+```
+
+**Likely causes:** the filter is registered for one architecture only, it is not registered at all, the target application cached its camera list, or the application does not enumerate DirectShow devices.
+
+**Fix:** register the half that is missing from an elevated prompt. The desktop's Camera card names the exact command, and it names one at a time — the 64-bit filter uses the ordinary `regsvr32`, and the 32-bit filter needs the 32-bit `regsvr32` in `SysWOW64`, which reads backwards and is the most common way this is got wrong:
+
+```powershell
+regsvr32 "C:\Program Files\UnifiedStream\UnifiedStreamCamera64.dll"
+C:\Windows\SysWOW64\regsvr32.exe "C:\Program Files\UnifiedStream\UnifiedStreamCamera32.dll"
+```
+
+Then restart the target application after enabling the Camera stream.
+
+If both are registered and the desktop no longer refuses, but one particular application still does not list the camera, check whether it is a UWP or Microsoft Store application or one that uses Media Foundation exclusively. Those do not enumerate DirectShow devices and will not show the camera; see the [coverage note in the usage guide](usage.md#on-a-windows-build).
+
+**Confirm:** the desktop's Camera card starts without a setup hint, and the target application lists **UnifiedStream Camera**.
+
+**Undo:** `regsvr32 /u` each DLL with the matching architecture's tool. Removal is complete: the camera disappears from every application's device list and the desktop reports it absent rather than present and broken.
+
 ## The virtual camera is busy or permission is denied
 
 **Diagnose**

@@ -86,6 +86,98 @@ jobs:
       - name: Run Rust workspace tests
         run: cargo test --workspace
 
+  windows-native:
+    # An area is defined by what builds it, not by what language it is written in. Nothing in the
+    # other four areas invokes MSBuild, so without this job a change that breaks the DirectShow
+    # filter merges green.
+    #
+    # It shares no cache, no toolchain, and no working directory with the `rust` job: that one runs
+    # in `desktop/src-tauri` under Cargo with `Swatinem/rust-cache`, and this one runs at the
+    # repository root under MSBuild with no cache at all. The one thing they have in common is the
+    # runner image, and the conformance step below deliberately uses both — a Rust producer and a
+    # C++ consumer in the same job is the whole point of it.
+    name: windows-native
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Build the filter and the conformance tool for x64
+        run: msbuild windows\UnifiedStreamWindows.sln -p:Configuration=Release -p:Platform=x64 -m
+      - name: Build the filter and the conformance tool for Win32
+        # Both architectures, because a 32-bit application can only load a 32-bit filter and the
+        # desktop reports a half-registration as its own distinct unusable state.
+        run: msbuild windows\UnifiedStreamWindows.sln -p:Configuration=Release -p:Platform=Win32 -m
+      - name: Confirm both filters were produced under the names the desktop pins
+        shell: pwsh
+        run: |
+          $expected = @(
+            'windows\x64\Release\UnifiedStreamCamera64.dll',
+            'windows\Win32\Release\UnifiedStreamCamera32.dll',
+            'windows\x64\Release\ring_conform.exe',
+            'windows\Win32\Release\ring_conform.exe'
+          )
+          foreach ($path in $expected) {
+            if (-not (Test-Path $path)) { throw "missing build output: $path" }
+          }
+      - name: Confirm no decoder is linked into the filter
+        # Decision 3 of docs/design.windows.md keeps JPEG on the desktop's side of the boundary so
+        # the component loaded into other applications' processes never parses network-originated
+        # bytes. A decoder cannot arrive without an import to carry it, so the import list is the
+        # place that claim stays true. Checked rather than reviewed: a new #include is invisible.
+        shell: pwsh
+        run: |
+          $allowed = @('kernel32.dll', 'advapi32.dll', 'user32.dll', 'gdi32.dll', 'ole32.dll',
+                       'oleaut32.dll', 'winmm.dll')
+          $dumpbin = Get-ChildItem 'C:\Program Files*\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe' |
+                     Select-Object -First 1 -ExpandProperty FullName
+          foreach ($dll in @('windows\x64\Release\UnifiedStreamCamera64.dll',
+                             'windows\Win32\Release\UnifiedStreamCamera32.dll')) {
+            $imports = & $dumpbin /dependents $dll |
+                       Select-String -Pattern '^\s+(\S+\.dll)\s*$' |
+                       ForEach-Object { $_.Matches[0].Groups[1].Value.ToLowerInvariant() }
+            foreach ($import in $imports) {
+              if ($allowed -notcontains $import) {
+                throw "$dll imports $import, which is not on the allowlist. If this is deliberate, add it there — and if it is a media or image decoder, it does not belong in a component loaded into other applications' processes."
+              }
+            }
+            Write-Host "$dll imports: $($imports -join ', ')"
+          }
+      - name: Build the conformance publisher
+        working-directory: desktop/src-tauri
+        run: cargo build -p unifiedstream-video --example ring_smoke --release
+      - name: Run the cross-toolchain conformance test
+        # The only thing in either build that observes both halves of the transport at once. A wrong
+        # memory ordering in the C++ consumer compiles cleanly, passes every static assertion it
+        # has, and tears rarely enough to reach users; nothing but a real race against the real
+        # producer catches it.
+        #
+        # Both architectures read the same 64-bit producer, which is also the check that the layout
+        # is identical in a 32-bit and a 64-bit process rather than merely asserted to be.
+        shell: pwsh
+        run: |
+          $readers = @(
+            (Start-Process -FilePath 'windows\x64\Release\ring_conform.exe' `
+                           -ArgumentList '--wait-ms','120000' -PassThru -NoNewWindow),
+            (Start-Process -FilePath 'windows\Win32\Release\ring_conform.exe' `
+                           -ArgumentList '--wait-ms','120000' -PassThru -NoNewWindow)
+          )
+          Push-Location desktop/src-tauri
+          cargo run -p unifiedstream-video --example ring_smoke --release -- --publish-only
+          $published = $LASTEXITCODE
+          Pop-Location
+          $failed = $published -ne 0
+          foreach ($reader in $readers) {
+            $reader.WaitForExit()
+            if ($reader.ExitCode -ne 0) { $failed = $true }
+          }
+          if ($failed) { throw 'the cross-toolchain conformance test failed' }
+
   android:
     name: android
     runs-on: ubuntu-24.04

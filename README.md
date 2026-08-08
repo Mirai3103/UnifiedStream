@@ -7,13 +7,13 @@ Use an Android phone as a webcam, microphone, and wireless speaker for a Linux P
 
 ## MVP features
 
-- **Virtual camera:** Android camera to a webcam other applications can select. How that camera is presented is a platform choice: Linux writes frames to a `v4l2loopback` device the kernel offers, while a Windows build hands them to a filter each application loads for itself.
+- **Virtual camera:** Android camera to a webcam other applications can select. How that camera is presented is a platform choice: Linux writes frames to a `v4l2loopback` device the kernel offers, while a Windows build publishes them into shared memory that a DirectShow filter — registered once with `regsvr32`, for both application architectures — reads inside each application's own process. Windows coverage is broad but not universal: Zoom, Discord, OBS, Skype, and Chromium-based browsers see the camera; UWP, Store, and Media Foundation-only applications do not. See the [usage guide](docs/usage.md#on-a-windows-build).
 - **Virtual microphone:** Android microphone to a PipeWire source on Linux.
 - **Wireless speaker:** PC system audio to the Android speaker or connected headphones. How that audio is obtained is a platform choice: Linux routes it through a PipeWire virtual sink it creates and makes the default output, while a Windows build captures the existing default output directly, creating no device and changing nothing the user selected.
 - **Local discovery:** automatic mDNS discovery with a manual IP-address fallback.
 - **Session controls:** pairing, reconnect, per-stream toggles, and live network telemetry.
 
-macOS, Play Store distribution, stable signing, and automatic updates are not part of this release. Windows support is under way — the speaker works on a build made from source — but there is no Windows package, so this release ships Linux artifacts only.
+macOS, Play Store distribution, stable signing, and automatic updates are not part of this release. Windows support is under way — the speaker and the camera both work on a build made from source — but there is no Windows package, so this release ships Linux artifacts only.
 
 ## Requirements
 
@@ -72,4 +72,6 @@ The desktop application layer depends only on media traits, and each integration
 
 ## License
 
-No license has been declared yet. Until a license file is added, normal copyright restrictions apply.
+UnifiedStream is released under the [MIT License](LICENSE), which covers the repository as a whole.
+
+Third-party source vendored into this repository keeps its own licence, recorded beside it. `windows/third_party/strmbase/` holds the DirectShow base classes from `microsoft/Windows-classic-samples`, which are MIT.
