@@ -76,15 +76,15 @@
 - [ ] 8.1 `cargo fmt --all -- --check`, `cargo clippy --workspace --lib --bins -- -D warnings`, and `cargo test --workspace` pass on Linux with no new warnings
 - [x] 8.2 The same three pass on Windows, and the MSBuild solution builds both architectures with no warnings
 - [x] 8.3 The conformance test passes locally and in CI, with a non-zero frame count and zero frames accepted with wrong contents
-- [ ] 8.4 Manual: register the 64-bit filter only, and confirm the desktop reports `OneArchitecture` and names the 32-bit command — the half-registered state is a real state and this is the only way to see it
-- [ ] 8.5 Manual: register both, start a session, enable the camera, and confirm the desktop no longer refuses and a 64-bit application (OBS or Chrome) shows the phone's video
-- [ ] 8.6 Manual: confirm a 32-bit application sees the camera too, which is the entire reason two DLLs are built
-- [ ] 8.7 Manual: select the camera in an application **before** starting the stream, and confirm it connects, shows the placeholder, and begins showing video when the stream starts without the application reselecting the camera — the ordinary first-run sequence, and the case decision 2 exists for
-- [ ] 8.8 Manual: change the phone's resolution mid-stream and confirm the picture follows without the application reselecting the camera and without a run of corrupt frames
-- [ ] 8.9 Manual: kill the desktop while an application is consuming the camera, and confirm the application does not hang, shows the placeholder within two seconds, and recovers when the desktop restarts
-- [ ] 8.10 Manual: stop the stream cleanly and confirm the placeholder appears immediately rather than after the heartbeat times out
-- [ ] 8.11 Manual: kill a consuming application abruptly and confirm the stream continues, other consumers are undisturbed, and the camera can be selected again afterwards
-- [ ] 8.12 Manual: run two consuming applications at once and confirm both receive video
-- [ ] 8.13 Manual: `regsvr32 /u` both architectures and confirm the camera disappears from every application's device list and the desktop reports it absent rather than present and broken
+- [x] 8.4 Manual: register the 64-bit filter only, and confirm the desktop reports `OneArchitecture` and names the 32-bit command — the half-registered state is a real state and this is the only way to see it
+- [x] 8.5 Manual: register both, start a session, enable the camera, and confirm the desktop no longer refuses and a 64-bit application (OBS or Chrome) shows the phone's video
+- [x] 8.6 Manual: confirm a 32-bit application sees the camera too, which is the entire reason two DLLs are built
+- [x] 8.7 Manual: select the camera in an application **before** starting the stream, and confirm it connects, shows the placeholder, and begins showing video when the stream starts without the application reselecting the camera — the ordinary first-run sequence, and the case decision 2 exists for
+- [x] 8.8 Manual: change the phone's resolution mid-stream and confirm the picture follows without the application reselecting the camera and without a run of corrupt frames
+- [x] 8.9 Manual: kill the desktop while an application is consuming the camera, and confirm the application does not hang, shows the placeholder within two seconds, and recovers when the desktop restarts
+- [x] 8.10 Manual: stop the stream cleanly and confirm the placeholder appears immediately rather than after the heartbeat times out
+- [x] 8.11 Manual: kill a consuming application abruptly and confirm the stream continues, other consumers are undisturbed, and the camera can be selected again afterwards
+- [x] 8.12 Manual: run two consuming applications at once and confirm both receive video
+- [x] 8.13 Manual: `regsvr32 /u` both architectures and confirm the camera disappears from every application's device list and the desktop reports it absent rather than present and broken
 - [ ] 8.14 Manual Linux regression: the camera behaves exactly as before, including the `v4l2loopback` hint, the device label, the delivered-fps figure, and the device being released on stop. **This also closes `add-windows-camera-frame-transport` task 6.6**, which was left unchecked when that change was archived
 - [ ] 8.15 Sync the delta specs into `openspec/specs/`, archive the change, and record the commands run in the pull request template
