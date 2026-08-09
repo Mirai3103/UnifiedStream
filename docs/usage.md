@@ -26,6 +26,17 @@ Complete [Linux installation and system setup](linux-installation.md) before fol
 
 Stop Camera in Android before unloading `v4l2loopback` or quitting the desktop app.
 
+### On a Windows build
+
+Windows has no kernel module to load. The virtual camera is a DirectShow filter each application loads for itself, registered once from an elevated prompt with the `regsvr32` command the desktop's Camera card names — one for 64-bit applications and one for 32-bit ones, because an application can only load a filter of its own architecture. The desktop refuses to start the camera, and names the missing command, until both are registered.
+
+The coverage limitation is the Windows equivalent of the `v4l2loopback` prerequisite, and it is worth knowing before you go looking for a setting that does not exist:
+
+- **Applications that enumerate DirectShow devices see the camera.** Zoom, Discord, OBS, Skype, and Chromium-based browsers, including Chrome and Edge.
+- **UWP and Microsoft Store applications, and applications that use Media Foundation exclusively, do not.** The camera will not appear in their device lists at all. This is a property of how those applications enumerate cameras, not of the installation, and no amount of re-registering changes it.
+
+Applications opened before the filter was registered need restarting, as they do on Linux.
+
 ## Use the phone as a microphone
 
 1. On Android, enable **Microphone** and grant microphone permission.

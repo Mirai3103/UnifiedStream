@@ -4,8 +4,19 @@
 //! Run with: `cargo run -p unifiedstream-video --example ring_smoke`
 //!
 //! This exists because the producer path has no other manual exercise. `VideoSink::start` refuses
-//! on every machine until `add-windows-directshow-camera` installs a filter to read the ring, so
-//! without this the only thing a person can observe by hand is the refusal.
+//! on every machine until a filter is installed to read the ring, so without this the only thing a
+//! person can observe by hand is the refusal.
+//!
+//! # Publish-only mode
+//!
+//! `cargo run -p unifiedstream-video --example ring_smoke -- --publish-only` publishes the same
+//! verifiable pattern for a bounded run and attaches no consumer of its own, so the C++
+//! `ring_conform.exe` can be the consumer instead. That pairing is the only thing in either build
+//! that observes both halves of the transport at once: a wrong memory ordering in the C++ consumer
+//! compiles cleanly, passes every static assertion it has, and tears rarely enough to reach users.
+//!
+//! It is a test harness, not a production path — nothing in `VideoSink` or `RingProducer` changes
+//! for it.
 //!
 //! Three things are worth watching in the output:
 //!
@@ -27,7 +38,11 @@ fn main() {
 
 #[cfg(target_os = "windows")]
 fn main() {
-    windows_smoke::run();
+    if std::env::args().skip(1).any(|arg| arg == "--publish-only") {
+        windows_smoke::publish_only();
+    } else {
+        windows_smoke::run();
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -52,6 +67,94 @@ mod windows_smoke {
     };
 
     const FRAMES: u64 = 600;
+
+    /// Geometry published in `--publish-only`. Small on purpose: the copy is short enough that the
+    /// producer laps a consumer repeatedly within one run, which is the condition a torn read needs
+    /// to be possible at all.
+    const CONFORM_FORMAT: VideoFormat = VideoFormat {
+        width: 320,
+        height: 240,
+        max_fps: 30,
+    };
+
+    /// Frames published in `--publish-only`. Large enough that a consumer starting a few
+    /// milliseconds late still accepts thousands, and that the producer laps it many times over.
+    const CONFORM_FRAMES: u64 = 20_000;
+
+    /// How long `--publish-only` holds the section up, ticking, before it starts publishing.
+    ///
+    /// A conformance tool is started alongside this process rather than by it, so it needs a window
+    /// in which the section exists and nothing is racing yet. Without one the whole run could be
+    /// over before the consumer attached, and "accepted zero frames" is a failure — correctly, but
+    /// for the wrong reason.
+    const CONFORM_WARMUP_MS: u64 = 1_500;
+
+    /// How long it keeps ticking after the last frame, so a consumer drains what it has not read
+    /// before the stop is published.
+    const CONFORM_DRAIN_MS: u64 = 500;
+
+    /// Publish the verifiable pattern for a bounded run, with no consumer of this process's own.
+    ///
+    /// Deliberately not a variant of [`run`]: that function's value is that it reads what it wrote,
+    /// and this one's is that it does not.
+    pub fn publish_only() {
+        let section = match CameraSection::open() {
+            Ok(section) => section,
+            Err(e) => {
+                eprintln!("could not create the camera section: {e}");
+                std::process::exit(1);
+            }
+        };
+
+        let mut producer = match RingProducer::create(section.region(), CONFORM_FORMAT, tick()) {
+            Ok(producer) => producer,
+            Err(e) => {
+                eprintln!("could not initialise the ring: {e}");
+                std::process::exit(1);
+            }
+        };
+
+        println!(
+            "publishing {CONFORM_FRAMES} frames at {}x{} into the named section; \
+             every byte of frame n is n mod 256",
+            CONFORM_FORMAT.width, CONFORM_FORMAT.height
+        );
+
+        // Alive and idle, so a consumer can attach and see a running producer before the race
+        // starts. The heartbeat is what keeps it from concluding the desktop is gone.
+        let warmup_end = std::time::Instant::now() + Duration::from_millis(CONFORM_WARMUP_MS);
+        while std::time::Instant::now() < warmup_end {
+            producer.tick(tick());
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // Then as fast as the copy allows, which is what makes a consumer lose frames to being
+        // lapped. Losing them is correct; accepting a spliced one is not, and that is what the
+        // conformance tool checks.
+        let mut payload = vec![0_u8; CONFORM_FORMAT.i420_frame_bytes()];
+        for n in 1..=CONFORM_FRAMES {
+            payload.fill(byte_for(n));
+            if let Err(e) = producer.publish(&payload, n, tick()) {
+                eprintln!("publish failed at frame {n}: {e}");
+                std::process::exit(1);
+            }
+        }
+
+        let drain_end = std::time::Instant::now() + Duration::from_millis(CONFORM_DRAIN_MS);
+        while std::time::Instant::now() < drain_end {
+            producer.tick(tick());
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // A clean stop, which is how the consumer knows the run is over rather than waiting out the
+        // staleness bound.
+        producer.stop();
+        println!("published {}, stopped", producer.frames_published());
+
+        // Hold the section open a moment longer so a consumer observes the stop through it rather
+        // than through the mapping disappearing.
+        std::thread::sleep(Duration::from_millis(500));
+    }
 
     pub fn run() {
         // The real kernel objects: the named section, its security descriptor, and the

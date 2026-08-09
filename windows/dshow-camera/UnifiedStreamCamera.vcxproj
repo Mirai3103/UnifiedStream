@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The DirectShow camera filter.
+
+  The output names are pinned by the contract, not chosen here: `transport::FILTER_DLL_X64` and
+  `FILTER_DLL_X86` are UnifiedStreamCamera64.dll and UnifiedStreamCamera32.dll, and the desktop's
+  setup hint already names them in a regsvr32 command it tells the user to paste.
+-->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{A1B2C3D4-0002-4E5F-9A0B-000000000002}</ProjectGuid>
+    <RootNamespace>UnifiedStreamCamera</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'!='Debug'">false</UseDebugLibraries>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <OutDir>$(MSBuildThisFileDirectory)..\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\obj\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+    <!-- The two names `platform/windows.rs` pins and the setup hint pastes into regsvr32. -->
+    <TargetName Condition="'$(Platform)'=='x64'">UnifiedStreamCamera64</TargetName>
+    <TargetName Condition="'$(Platform)'=='Win32'">UnifiedStreamCamera32</TargetName>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <!-- Raised by <streams.h> itself rather than by anything in this project. -->
+      <DisableSpecificWarnings>4100;4127;4201;4996</DisableSpecificWarnings>
+      <!-- /permissive- rejects constructs the vendored base-class headers rely on. -->
+      <ConformanceMode>false</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\third_party\strmbase;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;_USRDLL;STRICT;WIN32_LEAN_AND_MEAN;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">DEBUG;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)'!='Debug'">NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!--
+        Statically linked CRT: this DLL is loaded into Zoom, Chrome, and Discord, and a dependency
+        on a redistributable those processes may not have is a load failure the user experiences as
+        the camera being broken.
+      -->
+      <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(Configuration)'!='Debug'">MultiThreaded</RuntimeLibrary>
+      <Optimization Condition="'$(Configuration)'=='Debug'">Disabled</Optimization>
+      <Optimization Condition="'$(Configuration)'!='Debug'">MaxSpeed</Optimization>
+      <FunctionLevelLinking Condition="'$(Configuration)'!='Debug'">true</FunctionLevelLinking>
+      <IntrinsicFunctions Condition="'$(Configuration)'!='Debug'">true</IntrinsicFunctions>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <!--
+        A .def rather than __declspec(dllexport), so the x86 build exports the four undecorated
+        names regsvr32 looks for rather than the __stdcall-decorated ones.
+      -->
+      <ModuleDefinitionFile>UnifiedStreamCamera.def</ModuleDefinitionFile>
+      <AdditionalDependencies>strmiids.lib;winmm.lib;ole32.lib;oleaut32.lib;uuid.lib;advapi32.lib;user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- Producing signable binaries is in scope; obtaining the certificate is a release concern. -->
+      <EnableCOMDATFolding Condition="'$(Configuration)'!='Debug'">true</EnableCOMDATFolding>
+      <OptimizeReferences Condition="'$(Configuration)'!='Debug'">true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="filter.cpp" />
+    <ClCompile Include="section.cpp" />
+    <ClCompile Include="transport.cpp" />
+    <ClCompile Include="video.cpp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClInclude Include="filter.h" />
+    <ClInclude Include="section.h" />
+    <ClInclude Include="transport.h" />
+    <ClInclude Include="video.h" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="UnifiedStreamCamera.def" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="strmbase.vcxproj">
+      <Project>{A1B2C3D4-0001-4E5F-9A0B-000000000001}</Project>
+    </ProjectReference>
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

@@ -68,7 +68,8 @@ Five consequences must be planned for, not discovered:
 - **The desktop keeps the decoder, and the boundary carries decoded frames.** `add-windows-camera-frame-transport` settles the shape of that crossing: a versioned shared-memory ring carrying decoded I420, four page-aligned slots behind a per-slot seqlock, no event and no steady-state lock. The desktop decodes JPEG with the existing portable decoder and publishes raw planar frames, so the component that runs inside other applications' processes never contains a decoder fed by network-originated bytes — the largest crash and attack surface in this feature stays on our side of the boundary, under decision 1. It also keeps `decode_failures()` countable by the producer, which is what makes the trait's 0-fps contract enforceable on this platform. The cost is bandwidth: 1280x720 I420 at 30 fps is roughly 40 MB/s of `memcpy` between resident pages, and DirectShow consumers want an uncompressed subtype anyway.
 - **Both architectures are required.** A 32-bit application can only load a 32-bit filter. The installer registers an x86 DLL and an x64 DLL.
 - **Registration needs administrator rights**, and unregistration must be equally complete. `regsvr32` at install, `regsvr32 /u` at uninstall; a leftover CLSID leaves a broken camera in every application's device list.
-- **Coverage is broad but not universal.** Zoom, Discord, OBS, Skype, and Chromium-based browsers enumerate DirectShow devices. UWP and Store applications, and applications that use Media Foundation exclusively, do not. This limitation is documented for users in the same way the `v4l2loopback` prerequisite is documented on Linux.
+- **The filter offers a fixed set of resolutions and scales the ring into whichever one the application picked.** 640x480, 1280x720, and 1920x1080 I420 at 30 fps, answered without consulting the ring. This looks like unnecessary work, and the obvious alternative — connect at whatever geometry the ring currently advertises — does not survive the ordinary case: at connect time there is usually no producer at all. The user opens their conferencing application, picks the camera, and only then reaches for their phone, so `OpenFileMappingW` fails, there is no header, there is no geometry, and the filter still has to answer `GetMediaType` before the graph will connect it. Decoupling the two also makes following a resolution change nearly free — the scaler's input changes and the graph never learns anything happened — where the alternative would have needed a dynamic format change mid-connection that many consuming applications handle badly or not at all. The cost is bounded, and zero in the common case where the phone's geometry already matches the connected one and the scaler is bypassed entirely.
+- **Coverage is broad but not universal.** Zoom, Discord, OBS, Skype, and Chromium-based browsers enumerate DirectShow devices. UWP and Store applications, and applications that use Media Foundation exclusively, do not — the camera will not appear in their device lists at all, and there is no setting that makes it appear. This limitation is documented for users in the same way the `v4l2loopback` prerequisite is documented on Linux: see [Using camera, microphone, and speaker](usage.md) and [Troubleshooting](troubleshooting.md).
 
 The `VideoSink` trait absorbs this without change: `push_frame` becomes a write into the shared-memory ring rather than a v4l2 `write`, and `device_label` returns the filter's registered friendly name rather than a device path. This is why the trait's device identifier is specified as an opaque platform-supplied label and not as a path.
 
@@ -122,9 +123,19 @@ Cargo cannot build these. They are separate MSBuild artifacts consumed by the in
 
 ### 8. Licence hygiene: do not read `obs-virtualcam`
 
-`obs-virtualcam` is the obvious reference for a DirectShow virtual camera and is licensed GPLv2. This repository has no licence file yet, so incorporating GPLv2 code would make that decision by accident and irreversibly.
+`obs-virtualcam` is the obvious reference for a DirectShow virtual camera and is licensed GPLv2. This repository had no licence file when this decision was written, so incorporating GPLv2 code would have made that decision by accident and irreversibly.
 
 Work from `microsoft/Windows-classic-samples` for the DirectShow base classes and `microsoft/Windows-driver-samples` for `sysvad`, both MIT. Confirm the licence of any reference implementation before reading its source, not after.
+
+**Resolved by decision 9: the repository publishes under MIT.** `obs-virtualcam` remains unreadable, which was true before that decision and stays true after it.
+
+### 9. The repository publishes under MIT
+
+`LICENSE` at the root, MIT, applying to the repository as a whole. Added by `add-windows-directshow-camera`, which is the change that first vendored third-party source and therefore the first one that had to answer "compatible with what".
+
+Every third-party source the Windows work depends on is MIT — `strmbase` from `Windows-classic-samples` in W3, `sysvad` from `Windows-driver-samples` in W4 — so there is no compatibility question left to answer. MIT also leaves every route in decision 5 open: bundling VB-Audio's proprietary signed driver under a redistribution licence is a live option for the microphone, and a copyleft licence here would have foreclosed it while the funding decision is still unmade.
+
+The ordering is the part worth keeping: a licence checked after the fact cannot be acted on, because the knowledge cannot be given back. `repository-quality-gates` states this as a checkable requirement rather than leaving it in this document alone.
 
 ## Risks
 
@@ -141,7 +152,7 @@ Work from `microsoft/Windows-classic-samples` for the DirectShow base classes an
 | --- | --- | --- | --- |
 | W1 | Decouple platform integrations: traits, factories, unsupported fallbacks, Windows CI leg | No | No |
 | W2 | Speaker over WASAPI loopback, with silent keep-alive and device-change following — **implemented** | No | No |
-| W3 | Camera over the DirectShow filter, with the shared-memory frame transport and installer registration — **transport implemented**, filter outstanding | No | Authenticode only |
+| W3 | Camera over the DirectShow filter, with the shared-memory frame transport and installer registration — **implemented** | No | Authenticode only |
 | W4 | Microphone over the project's own WDM audio driver, with the WiX installer | **Yes** | **Yes** |
 
 W1 through W3 produce a Windows build that is genuinely useful — a wireless speaker and a virtual webcam — without spending anything on certificates. The decision in section 5 can therefore be made against a working product rather than against a plan.
@@ -151,7 +162,7 @@ W1 and W2 have OpenSpec changes (`decouple-platform-integrations` and `add-windo
 W3 is delivered as two changes, because the camera is the only feature whose frames leave the desktop's address space and the crossing is code that fails silently — a torn read is a corrupt frame, not a crash:
 
 - `add-windows-camera-frame-transport` builds and proves the transport alone, in Rust, where the existing test suite already runs on both CI legs. It ships the versioned shared-memory contract, the Windows section and its security descriptor, the availability probe, and a `VideoSink` that refuses the stream while no filter is registered and names the command that installs one.
-- `add-windows-directshow-camera` writes the C++ filter that consumes it, against a contract that is already specified and already tested, and brings with it the `windows/` tree, MSBuild, the native CI area, and the registration tooling.
+- `add-windows-directshow-camera` writes the C++ filter that consumes it, against a contract that is already specified and already tested, and brings with it the `windows/` tree, MSBuild, the native CI area, and the registration tooling. It is the second half, and with it W3 is complete.
 
 Writing the ring at the same time as the first C++ in this repository, a new toolchain, and a new CI area would have meant debugging all of them against each other.
 
