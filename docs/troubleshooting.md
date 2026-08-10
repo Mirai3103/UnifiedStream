@@ -127,6 +127,47 @@ This interrupts current audio applications; reopen them afterward.
 
 **Undo:** no persistent UnifiedStream PipeWire node is installed. Stop the stream; the runtime node disappears.
 
+## The microphone is missing on a Windows build
+
+**Diagnose**
+
+```powershell
+Get-PnpDevice -Class MEDIA | Where-Object FriendlyName -like '*VB-Audio*'
+Get-CimInstance Win32_SoundDevice | Select-Object Name, Status
+```
+
+**Likely causes:** VB-CABLE is not installed, its playback device is disabled in Sound settings, or a VB-CABLE release is installed whose devices this build cannot tell apart.
+
+**Fix:** the desktop's Microphone card distinguishes these and says which one applies, because they have different remedies:
+
+- *"VB-CABLE is not installed"* — install it from <https://vb-cable.com> and start the microphone again. This is reachable only from an unpackaged build or after a manual uninstall; the installer normally puts it there.
+- *"installed but disabled"* — enable **CABLE Input** under Sound settings → More sound settings → Playback.
+- *"could not be identified"* — the installed VB-CABLE release exposes playback devices this build cannot distinguish. The desktop refuses rather than guessing, because rendering into the wrong one is silent: every call succeeds and nobody ever hears you. The log lists every device it considered and why each was rejected, which is the useful thing to attach to a bug report.
+
+**Confirm:** the Microphone card starts without an error, and the target application lists **CABLE Output (VB-Audio Virtual Cable)**.
+
+**Undo:** nothing to undo — the desktop creates no device here. Uninstalling VB-CABLE removes both halves of the cable and returns the microphone to refusing with guidance.
+
+## Extra VB-Audio playback devices appear on Windows
+
+**Diagnose**
+
+```powershell
+Get-CimInstance Win32_SoundDevice | Select-Object Name, Status
+```
+
+**Likely causes:** none. `CABLE Input` — and, on releases that expose it, `CABLE In 16ch` — sitting in your playback list beside your real speakers is what a virtual audio *cable* looks like. A cable has two ends, and only the capture end is the microphone.
+
+This is not a defect and it cannot be hidden: the driver is VB-Audio's, not this project's, so which devices it presents is not ours to change. It is the accepted cost of not shipping a kernel-mode driver of our own.
+
+**Fix:** leave them alone and select your real speakers as the system output.
+
+Selecting `CABLE Input` as your system output creates a genuine problem, and the symptom is recognisable: **your PC goes silent, and if the Speaker stream is running the phone hears its own microphone back as a howl.** Every part of that configuration is supported and nothing misbehaves — the desktop is playing the phone's audio into the cable, and the Speaker stream would capture the system output, which is now that same cable. The desktop detects it and refuses the Speaker stream, naming the device, rather than establishing the loop.
+
+**Confirm:** the system output is a real playback device, sound from other applications is audible on your speakers, and the Speaker stream starts without a conflict message.
+
+**Undo:** choose your real output under Sound settings → Choose where to play sound, then start the Speaker stream again. To remove the extra devices entirely, uninstall VB-CABLE — which also removes the microphone.
+
 ## Audio is routed but silent
 
 **Diagnose**

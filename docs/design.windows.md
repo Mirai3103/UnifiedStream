@@ -220,7 +220,7 @@ The ordering is the part worth keeping: a licence checked after the fact cannot 
 | W1 | Decouple platform integrations: traits, factories, unsupported fallbacks, Windows CI leg — **implemented** | No | No |
 | W2 | Speaker over WASAPI loopback, with silent keep-alive and device-change following — **implemented** | No | No |
 | W3 | Camera over the DirectShow filter, with the shared-memory frame transport and manual `regsvr32` registration — **implemented** | No | No |
-| W4 | Microphone by bundling VB-CABLE and rendering into its endpoint over WASAPI, with the attribution it requires | No, not ours | No |
+| W4 | Microphone by rendering into VB-CABLE's endpoint over WASAPI, with the attribution it requires — **implemented**; bundling it is W5 | No, not ours | No |
 | W5 | Windows release: installer, Authenticode on the filter DLLs, release workflow, versioned artifacts, user documentation, and a Windows smoke test | No | Authenticode only |
 
 No phase needs a certificate this project must buy, and no phase writes kernel-mode code. That was not true when this plan was first written; decision 4 made it true.

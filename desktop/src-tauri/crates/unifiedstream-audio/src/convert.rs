@@ -26,35 +26,8 @@
 //! that needs it has no audio endpoint at all. An off-by-one in the chunk accounting produces
 //! audio that plays, sounds nearly right, and drifts.
 
-use rubato::{FftFixedInOut, Resampler};
-
+use crate::sample::{self, Resampling, SampleType};
 use crate::{AudioError, AudioFormat};
-
-/// How a source encodes one sample in its interleaved byte stream.
-///
-/// Little-endian throughout: these are the formats a shared-mode mixer reports, and every
-/// platform this crate targets is little-endian.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SampleType {
-    /// 32-bit IEEE float, nominally within `-1.0..=1.0`. What a shared-mode mixer usually
-    /// reports, and the only format that can arrive out of range.
-    Float32,
-    /// 16-bit signed integer.
-    Int16,
-    /// 32-bit signed integer.
-    Int32,
-}
-
-impl SampleType {
-    /// Bytes one sample of this type occupies.
-    #[must_use]
-    pub const fn width(self) -> usize {
-        match self {
-            Self::Int16 => 2,
-            Self::Float32 | Self::Int32 => 4,
-        }
-    }
-}
 
 /// The format a platform's audio source actually delivers.
 ///
@@ -74,17 +47,6 @@ pub struct SourceFormat {
 /// mixing one channel into two.
 const FOLD: f32 = std::f32::consts::FRAC_1_SQRT_2;
 
-/// Full-scale magnitude. Used in both directions so an integer source round-trips exactly: only
-/// a float sample outside `-1.0..=1.0` is altered, and then by the clamp rather than by wrapping.
-const FULL_SCALE: f32 = 32_768.0;
-
-/// Input frames gathered before one resampler pass, as a fraction of a second.
-///
-/// The resampler rounds this up to a whole number of its own periods, so the value only sets the
-/// scale: a hundredth of a second keeps added latency near 10 ms at the rates endpoints actually
-/// run at, and keeps one pass small enough to stay in cache.
-const RESAMPLER_CHUNK_DIVISOR: u32 = 100;
-
 /// Converts a platform audio source's interleaved samples into the negotiated wire format.
 ///
 /// Stateful: a resampler carries overlap between passes and holds back input that does not fill
@@ -102,18 +64,6 @@ pub struct AudioConverter {
     resampler: Option<Resampling>,
     /// Reused across calls so a steady capture stops allocating.
     out: Vec<i16>,
-}
-
-/// The resampler and the scratch its interface requires.
-struct Resampling {
-    inner: FftFixedInOut<f32>,
-    /// Input frames one pass consumes, per channel. Fixed for the resampler's lifetime, which is
-    /// what makes the output frames per pass fixed too, and therefore the ratio exact.
-    chunk_in: usize,
-    /// Output frames one pass produces, per channel. Also fixed.
-    chunk_out: usize,
-    /// One buffer per target channel, each `chunk_out` long.
-    scratch: Vec<Vec<f32>>,
 }
 
 impl AudioConverter {
@@ -182,7 +132,7 @@ impl AudioConverter {
             for frame in input.chunks_exact(frame_bytes) {
                 let mapped = map_frame(frame, source, target_channels);
                 for sample in mapped.iter().take(target_channels) {
-                    self.out.push(to_i16(*sample));
+                    self.out.push(sample::to_i16(*sample));
                 }
             }
             return &self.out;
@@ -232,11 +182,11 @@ impl AudioConverter {
 
         while planar
             .first()
-            .is_some_and(|channel| channel.len() >= resampling.chunk_in)
+            .is_some_and(|channel| channel.len() >= resampling.chunk_in())
         {
             let views: Vec<&[f32]> = planar
                 .iter()
-                .filter_map(|channel| channel.get(..resampling.chunk_in))
+                .filter_map(|channel| channel.get(..resampling.chunk_in()))
                 .collect();
             if views.len() != planar.len() {
                 // Channels out of step with each other would be a bug in this module rather than
@@ -245,53 +195,18 @@ impl AudioConverter {
                 return;
             }
 
-            let frames = match resampling.inner.process_into_buffer(
-                &views,
-                &mut resampling.scratch,
-                None,
-            ) {
-                Ok((_, produced)) => produced.min(resampling.chunk_out),
-                Err(e) => {
-                    tracing::warn!(error = %e, "resampler pass failed; dropping the input chunk");
-                    0
-                }
-            };
-
+            let frames = resampling.process(&views);
             for frame in 0..frames {
-                for channel in &resampling.scratch {
-                    out.push(to_i16(channel.get(frame).copied().unwrap_or(0.0)));
+                for channel in resampling.scratch() {
+                    out.push(sample::to_i16(channel.get(frame).copied().unwrap_or(0.0)));
                 }
             }
 
             for channel in planar.iter_mut() {
-                let taken = resampling.chunk_in.min(channel.len());
+                let taken = resampling.chunk_in().min(channel.len());
                 channel.drain(..taken);
             }
         }
-    }
-}
-
-impl Resampling {
-    fn new(source_rate: u32, target_rate: u32, channels: usize) -> Result<Self, AudioError> {
-        let chunk_hint = (source_rate / RESAMPLER_CHUNK_DIVISOR).max(1) as usize;
-        let inner = FftFixedInOut::<f32>::new(
-            source_rate as usize,
-            target_rate as usize,
-            chunk_hint,
-            channels,
-        )
-        .map_err(|e| {
-            AudioError::UnsupportedFormat(format!("{source_rate}Hz to {target_rate}Hz: {e}"))
-        })?;
-
-        let chunk_in = inner.input_frames_next();
-        let chunk_out = inner.output_frames_max();
-        Ok(Self {
-            inner,
-            chunk_in,
-            chunk_out,
-            scratch: vec![vec![0.0; chunk_out]; channels],
-        })
     }
 }
 
@@ -306,7 +221,7 @@ impl Resampling {
 /// The returned pair carries `target_channels` meaningful values: a mono target gets the stereo
 /// result folded once more, in the same place, so both callers read the array the same way.
 fn map_frame(frame: &[u8], source: SourceFormat, target_channels: usize) -> [f32; 2] {
-    let at = |channel: usize| decode_sample(frame, channel, source.sample_type);
+    let at = |channel: usize| sample::decode(frame, channel, source.sample_type);
 
     let (left, right) = match source.channels {
         1 => {
@@ -355,40 +270,6 @@ fn map_frame(frame: &[u8], source: SourceFormat, target_channels: usize) -> [f32
     [left, right]
 }
 
-/// Decode one channel of one interleaved source frame to a float in `-1.0..=1.0`, except that a
-/// float source may already be outside that range — clamping is [`to_i16`]'s job, at the end.
-fn decode_sample(frame: &[u8], channel: usize, sample_type: SampleType) -> f32 {
-    let width = sample_type.width();
-    let start = channel * width;
-    let Some(bytes) = frame.get(start..start + width) else {
-        return 0.0;
-    };
-    match (sample_type, bytes) {
-        (SampleType::Float32, [a, b, c, d]) => f32::from_le_bytes([*a, *b, *c, *d]),
-        (SampleType::Int16, [a, b]) => f32::from(i16::from_le_bytes([*a, *b])) / FULL_SCALE,
-        (SampleType::Int32, [a, b, c, d]) => {
-            i32::from_le_bytes([*a, *b, *c, *d]) as f32 / (FULL_SCALE * 65_536.0)
-        }
-        _ => 0.0,
-    }
-}
-
-/// Scale, clamp, and convert one float sample.
-///
-/// The clamp is the point of this function: a mixer's float samples are not guaranteed to stay
-/// within full scale, and an unclamped conversion of an out-of-range sample is what turns a loud
-/// passage into a burst of noise at the opposite polarity.
-fn to_i16(sample: f32) -> i16 {
-    let scaled = (sample * FULL_SCALE).round();
-    if scaled >= f32::from(i16::MAX) {
-        i16::MAX
-    } else if scaled <= f32::from(i16::MIN) {
-        i16::MIN
-    } else {
-        scaled as i16
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,7 +301,7 @@ mod tests {
         converter
             .resampler
             .as_ref()
-            .map_or(0, |r| r.chunk_out * converter.target_channels)
+            .map_or(0, |r| r.chunk_out() * converter.target_channels)
     }
 
     #[test]
@@ -498,7 +379,7 @@ mod tests {
         let norm = 1.0 / (1.0 + FOLD + FOLD);
         assert_eq!(
             converter.convert(&f32_bytes(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0])),
-            [to_i16(norm), 0]
+            [sample::to_i16(norm), 0]
         );
 
         // The LFE is dropped, not folded in.
@@ -512,7 +393,7 @@ mod tests {
         let out = converter
             .convert(&f32_bytes(&[0.9, 0.9, 0.9, 0.0, 0.9, 0.9]))
             .to_vec();
-        let expected = to_i16(0.9);
+        let expected = sample::to_i16(0.9);
         assert!(
             out.iter()
                 .all(|s| (i32::from(*s) - i32::from(expected)).abs() <= 1),

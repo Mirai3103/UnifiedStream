@@ -57,31 +57,40 @@ ROOT\MEDIA\0005   "VB-Audio Virtual Cable"   VBAudioVACWDM / VB-Audio Software
 
 What is actually available to match on, measured rather than assumed:
 
-| Property | Value on 3.3.1.7 | Stable across installs? | User-editable? |
-| --- | --- | --- | --- |
-| Endpoint ID | `{0.0.0.00000000}.{B5E55CC9-…}` | **No** — GUID minted at install time | No |
-| `PKEY_Device_FriendlyName` | `CABLE Input (VB-Audio Virtual Cable)` | Yes | **Yes** |
-| `PKEY_Device_DeviceDesc` | `CABLE Input` | Yes | **Yes** — rename writes here |
-| `PKEY_DeviceInterface_FriendlyName` | `VB-Audio Virtual Cable` | Yes | No — comes from the INF |
-| Driver identity (`{83da6326-…},3`) | `oem13.inf:…:VBCableInst.NTamd64:3.3.1.7:VBAudioVACWDM` | Partly — `oem13` is machine-local | No |
-| KS filter name (`{840b8171-…},0`) | `…\vbaudiovacwdm2022_out1_topo_…/00010001` | Yes | No |
+| Property | `CABLE Input` on 3.3.1.7 | `CABLE In 16ch` on 3.3.1.7 | Stable across installs? | User-editable? |
+| --- | --- | --- | --- | --- |
+| Endpoint ID | `{0.0.0.00000000}.{B5E55CC9-…}` | `…{2BA58530-…}` | **No** — GUID minted at install time | No |
+| `PKEY_Device_FriendlyName` | `CABLE Input (VB-Audio Virtual Cable)` | `CABLE In 16ch (…)` | Yes | **Yes** |
+| `PKEY_Device_DeviceDesc` | `CABLE Input` | `CABLE In 16ch` | Yes | **Yes** — rename writes here |
+| `PKEY_DeviceInterface_FriendlyName` | `VB-Audio Virtual Cable` | **identical** | Yes | No — comes from the INF |
+| Driver identity (`{83da6326-…},3`) | `oem13.inf:…:VBCableInst.NTamd64:3.3.1.7:VBAudioVACWDM` | **identical** | Partly — `oem13` is machine-local | No |
+| `PKEY_AudioEngine_DeviceFormat` channels | 2 | **2** | Yes | Yes — its control panel sets it |
+| `GetMixFormat` | 2ch 48 kHz float | **2ch 48 kHz float** | Yes | Yes — follows the above |
+| Jack subtype (`{1da5d803-…},8`) | `KSNODETYPE_SPEAKER` | `KSNODETYPE_LINE_CONNECTOR` | Yes | No — from the driver's topology |
+| KS filter name (`{840b8171-b0ad-…},0`) | `…\vbaudiovacwdm2022_out1_topo_…/00010001` | `…/00010002` | Yes | No |
 
 **The endpoint ID is not an identity.** An earlier draft of this decision asserted that the endpoint ID "carries the driver's hardware identifier, which changes only when VB-Audio ships a different driver", and matched on it. That is false. The GUID is generated when the endpoint is first enumerated on a given machine; the hardware identifier `VBAudioVACWDM` lives in an unrelated property. An endpoint ID remains a valid handle for re-opening a device *within one installation* — it is what `IMMDeviceEnumerator::GetDevice` takes, and it is what the feedback-loop guard compares two of — but it can never be a constant in this repository, and no task may be written as though it could.
 
 **Friendly names are unusable for a different reason than the earlier draft gave.** Renaming a device in the Sound control panel writes the new text into `PKEY_Device_DeviceDesc`; `PKEY_Device_FriendlyName` is composed as `DeviceDesc (adapter name)`. So a rename moves both, and neither is a match key. `PKEY_DeviceInterface_FriendlyName` — the adapter name — is the part the rename does not touch, because it comes from the INF rather than from the endpoint.
 
+**The channel count does not discriminate, and an earlier draft of this decision was wrong to say it did.** Measured on 3.3.1.7 rather than assumed: `CABLE In 16ch` declares **two** channels in `PKEY_AudioEngine_DeviceFormat` and reports **two** from `GetMixFormat`, exactly as `CABLE Input` does. The "16ch" in its name describes what its filter can be configured for, not what the endpoint currently declares, and a rule that rejects candidates wider than stereo therefore rejects neither of them. That draft's rule did not pick the wrong endpoint — the refusal rule below caught it — but it made the feature unresolvable on every machine carrying this release, which is a different failure and an equally real one.
+
+What does separate them, and is neither user-editable nor per-install, is the **jack subtype** the driver's topology gives each endpoint: `CABLE Input` presents itself as a `KSNODETYPE_SPEAKER` and `CABLE In 16ch` as a `KSNODETYPE_LINE_CONNECTOR`. That is the property that says *what the endpoint is for* rather than *where it happened to land in an enumeration*, which is what the channel count was reached for and failed to be.
+
 So the match is:
 
 1. **Family**, from `PKEY_DeviceInterface_FriendlyName` equal to VB-CABLE's adapter name, corroborated where readable by the hardware identifier `VBAudioVACWDM` in the driver-identity property. The adapter name is a documented PKEY; the driver-identity property is not, so it strengthens a match and must not be the only thing a match depends on.
-2. **Which endpoint**, by rejecting candidates whose device format declares more than two channels. The cable's input is stereo; the decoy is the 16-channel variant, and the channel count is the property that says *what the endpoint is for* rather than *where it happened to land in an enumeration*.
+2. **Which endpoint**, by rejecting candidates whose jack subtype is not `KSNODETYPE_SPEAKER`, and additionally rejecting any whose device format declares more than two channels. The second rule discriminates nothing on 3.3.1.7 and is kept anyway: it costs one comparison, and a future release that does expose a genuinely wide endpoint is exactly the case it was reached for.
+
+The KS filter name's trailing pin index (`/00010001` against `/00010002`) also separates them exactly, and was **rejected as a match key**: choosing the lower index is choosing by position within the driver's topology, which is the thing `microphone-stream` forbids and for the same reason it forbids enumeration order — nothing guarantees the destination is the earlier pin in a release nobody has seen.
 
 The resolver builds a candidate list and **refuses on anything other than exactly one survivor** — zero is "not installed", more than one is ambiguity that must be reported rather than guessed through. It logs every candidate it considered and why each was rejected, so a wrong pick on a VB-CABLE version this project has not seen is diagnosable from a user's log instead of invisible. Guessing here is the same class of mistake as falling back to the default output, and gets the same answer.
 
 The friendly name stays as display text only — it is what the UI shows the user so they know which device to select, which is precisely the opaque platform-supplied label `microphone-stream` now requires.
 
-**The two-channel rule is provisional, and deliberately not blocked on.** Only 3.3.1.7 has been examined, and whether the rule holds across VB-CABLE releases cannot be settled by measurement: VB-Audio publishes the current release only, older ones have no official source, and fetching a kernel-mode driver from a third-party mirror to verify a heuristic is a worse trade than leaving the heuristic unverified.
+**The discrimination is provisional, and deliberately not blocked on.** Only 3.3.1.7 has been examined, and whether the rules hold across VB-CABLE releases cannot be settled by measurement: VB-Audio publishes the current release only, older ones have no official source, and fetching a kernel-mode driver from a third-party mirror to verify a heuristic is a worse trade than leaving the heuristic unverified.
 
-What makes that acceptable is the refusal rule above, not optimism. A release that breaks the two-channel discrimination produces zero candidates or several, and both are refusals with a log naming what was considered. The design's job here is not to be right about every VB-CABLE version — it cannot be — but to fail loudly on the versions it is wrong about. Measure the current release, state in the resolver's comment which version the rule rests on, and let a real report from a real machine be what reopens this.
+What makes that acceptable is the refusal rule above, not optimism. A release that breaks the discrimination produces zero candidates or several, and both are refusals with a log naming what was considered. The design's job here is not to be right about every VB-CABLE version — it cannot be — but to fail loudly on the versions it is wrong about. The channel rule proved the point on the very release it was written against, and the failure it produced was a refusal with both candidates named. Measure the current release, state in the resolver's comment which version the rules rest on, and let a real report from a real machine be what reopens this.
 
 **No fallback, on any failure.** If the endpoint cannot be resolved, the stream is refused. This is stated as a requirement rather than left to implementation because the natural defensive reflex — "fall back to the default output so something works" — produces the exact failure the feature must not have: the user's voice played aloud on their own speakers, and fed back into the phone if the speaker stream is also running. The same reasoning governs recovery: `AUDCLNT_E_DEVICE_INVALIDATED` mid-stream fails the stream visibly rather than re-resolving, because the only thing worth re-resolving to is the device that just went away.
 
@@ -121,7 +130,7 @@ It lands here rather than in W5 for a plain reason: the code is in `platform/win
 
 **Endpoint matching is a heuristic against another vendor's driver.** A VB-CABLE release that changes its adapter name breaks resolution, and the symptom is the feature reporting "not installed" on a machine where it plainly is. That is the benign direction: it is loud, it is a support question with an obvious answer, and the guidance distinguishing "no endpoint" from "endpoint unusable" makes a confused user's report diagnostic.
 
-The malign direction is a release that adds a render endpoint the two-channel rule does not exclude. Resolution then succeeds against the wrong endpoint and the feature is silently dead — the case examined above, generalised. This is why the resolver refuses on ambiguity instead of taking the first survivor, and why it logs its rejected candidates: the mitigation is not that the rule cannot break, but that breaking it produces a refusal and a log rather than silence. Only one VB-CABLE version has been examined, and the rule is provisional until more have been.
+The malign direction is a release that adds a render endpoint the discrimination does not exclude. Resolution then succeeds against the wrong endpoint and the feature is silently dead — the case examined above, generalised. This is why the resolver refuses on ambiguity instead of taking the first survivor, and why it logs its rejected candidates: the mitigation is not that the rules cannot break, but that breaking them produces a refusal and a log rather than silence. That was not hypothetical for long — the first rule this design chose was wrong about the release it was written against, and what it produced was a refusal naming both candidates. Only one VB-CABLE version has been examined, and the discrimination is provisional until more have been.
 
 **VB-CABLE's endpoint format is user-configurable.** Its control panel exposes sample rate and bit depth, so the mix format is not merely "whatever the mixer runs at" but whatever the user set it to, including rates far from 48 kHz. The converter handles this by construction — the same problem the speaker already solves in the other direction — but it means the resampling path is ordinary rather than exceptional here, and should be tested at rates that are not simple ratios of 48 kHz.
 

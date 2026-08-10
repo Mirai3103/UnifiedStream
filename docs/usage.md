@@ -50,6 +50,20 @@ Applications opened before the filter was registered need restarting, as they do
 4. Select **UnifiedStream Microphone** in the conferencing, recording, or streaming application.
 5. Speak into the phone and confirm the level meter moves in both UnifiedStream and the target application.
 
+### On a Windows build
+
+Windows presents the microphone through **VB-CABLE**, a virtual audio cable by VB-Audio that is installed alongside UnifiedStream. The desktop plays the phone's audio into the cable's playback half and applications record from its capture half, so the device to select is:
+
+**CABLE Output (VB-Audio Virtual Cable)**
+
+Three differences from Linux follow from the cable belonging to a driver rather than to this application, and are worth knowing before they look like faults:
+
+- **The device is always there.** It is created when VB-CABLE is installed, not when a stream starts, so it appears in every application's microphone list whether or not UnifiedStream is running. With no stream it carries silence.
+- **It does not carry this product's name.** The cable is VB-Audio's, and so is the name.
+- **The playback half appears in your output list too.** `CABLE Input`, and on some releases `CABLE In 16ch`, show up alongside your real speakers. Leave them alone: selecting one as your system output sends your PC's sound into the phone's microphone path instead of to your speakers, and the Speaker stream refuses to start while that is the case. See the [troubleshooting note](troubleshooting.md#extra-vb-audio-playback-devices-appear-on-windows).
+
+If VB-CABLE is not installed — an unpackaged build, or a manual uninstall — the desktop refuses the microphone and names what is missing. The Camera and Speaker streams are unaffected.
+
 ## Play Linux audio on the phone
 
 1. Enable **Speaker** on Android.

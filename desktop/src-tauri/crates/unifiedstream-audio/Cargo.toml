@@ -26,20 +26,27 @@ tokio.workspace = true
 pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs", rev = "03301bc734c9f1d3fb7a064c072458ad00245133", features = ["v0_3_49"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-# WASAPI loopback capture of the default render endpoint. Held at the 0.61 line Tauri already
-# resolves, so the build carries one copy of the Windows metadata rather than two.
+# WASAPI loopback capture of the default render endpoint, and WASAPI rendering into the virtual
+# microphone's endpoint. Held at the 0.61 line Tauri already resolves, so the build carries one
+# copy of the Windows metadata rather than two.
 #
-# `Win32_System_Com_StructuredStorage` and `Win32_System_Variant` are not used directly: they
-# gate `IMMDevice::Activate`, whose signature names a `PROPVARIANT` this crate always passes as
-# `None`. `Win32_System_Threading` is MMCSS, which registers the polling capture thread as an
-# audio thread so the scheduler does not starve it under load.
+# `Win32_System_Com_StructuredStorage` and `Win32_System_Variant` gate `IMMDevice::Activate`,
+# whose signature names a `PROPVARIANT`, and are used directly to read the endpoint properties the
+# microphone's destination is resolved by. `Win32_UI_Shell_PropertiesSystem` gates
+# `IMMDevice::OpenPropertyStore`, which is where those properties live.
+# `Win32_System_Threading` is MMCSS, which registers the audio threads so the scheduler does not
+# starve them under load, and the event objects the render client is woken by —
+# `Win32_Security` is there only because `CreateEventW` names a `SECURITY_ATTRIBUTES` this crate
+# always passes as `None`.
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Media_Audio",
+    "Win32_Security",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Threading",
     "Win32_System_Variant",
+    "Win32_UI_Shell_PropertiesSystem",
 ] }
 # Named directly, though `windows` re-exports it as `windows::core`: the `#[implement]` macro
 # expands to absolute `::windows_core::` paths, so the crate has to be in this manifest for the
@@ -48,6 +55,9 @@ windows-core = "0.61"
 
 [dev-dependencies]
 unifiedstream-net.workspace = true
+# The manual smoke examples are the only place this crate's own tracing output is the point, so
+# a subscriber is a dev dependency rather than something the library installs.
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true

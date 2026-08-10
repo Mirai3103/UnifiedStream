@@ -238,3 +238,9 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build frontend
         run: bun run build
+      # The suite this area was missing. It covers the application shell's behaviour, and it is
+      # also where the redistribution obligation for VB-CABLE is enforced: the attribution its
+      # licence requires lives in a rendered React surface, so nothing else in this repository can
+      # notice it being deleted. See docs/third-party-notices.md.
+      - name: Run frontend tests
+        run: bun run test
