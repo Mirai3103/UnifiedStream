@@ -71,7 +71,7 @@
 - [x] 7.5 Manual Windows privacy check: confirm with the microphone streaming that nothing is audible on the PC's own speakers, and that changing the default output device mid-stream does not change where the audio goes
 - [x] 7.6 Manual Windows underrun test: interrupt the phone's network briefly and confirm silence rather than repeated or stale audio, with playback resuming immediately and no accumulated latency
 - [x] 7.7 Manual Windows rate test: set VB-CABLE's endpoint format to a rate other than 48 kHz in its control panel and confirm audio is correct and stays in sync over several minutes
-- [ ] 7.8 Manual Windows endpoint-selection test: on a machine where both `CABLE Input` and `CABLE In 16ch` are present, confirm from the reported device label and the candidate log that `CABLE Input` was chosen, then rename `CABLE Input` in the Sound control panel and confirm resolution still succeeds
+- [x] 7.8 Manual Windows endpoint-selection test: on a machine where both `CABLE Input` and `CABLE In 16ch` are present, confirm from the reported device label and the candidate log that `CABLE Input` was chosen, then rename `CABLE Input` in the Sound control panel and confirm resolution still succeeds
 - [x] 7.9 Manual Windows absence test: uninstall VB-CABLE and confirm the microphone refuses with guidance naming what is missing, while the camera and speaker continue to work
 - [x] 7.10 Manual Windows loop test: set the system output to `CABLE Input`, enable the speaker, and confirm it is refused with the conflict named rather than producing feedback
 - [ ] 7.11 Manual Linux regression: the microphone path behaves exactly as before, including the virtual source appearing and being destroyed with the stream
