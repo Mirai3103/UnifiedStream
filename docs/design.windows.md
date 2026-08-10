@@ -1,6 +1,6 @@
 # Windows architecture decisions
 
-Status: accepted; W1 and W2 implemented.
+Status: accepted; W1 to W3 implemented.
 
 This document records the architecture decided for the Windows port of the UnifiedStream desktop application, and the reasoning behind each choice. It is a living document that spans several OpenSpec changes rather than the design of any one of them: an OpenSpec `design.md` is archived with its change, and these decisions must stay visible while the Windows work is carried out.
 
@@ -25,7 +25,7 @@ The three media features do not have the same shape on Windows as they do on Lin
 | Feature | Direction | Linux | Windows | Kernel-mode? |
 | --- | --- | --- | --- | --- |
 | Camera | phone to PC | `v4l2loopback` kernel module | DirectShow COM filter | No |
-| Microphone | phone to PC | PipeWire virtual source | Own WDM audio driver | **Yes** |
+| Microphone | phone to PC | PipeWire virtual source | Bundled VB-CABLE, rendered into over WASAPI | No, not ours |
 | Speaker | PC to phone | PipeWire virtual sink plus default-output takeover | WASAPI loopback capture | No |
 
 ## Decisions
@@ -36,7 +36,7 @@ Only functionality that provably cannot be implemented in user mode goes into a 
 
 A fault in user-mode code fails one process. A fault in kernel-mode code fails the machine. The asymmetry is large enough that a measurable amount of extra user-mode work is worth it to avoid an equivalent amount of kernel-mode work, and the marginal cost of extending an existing driver is a poor guide to the marginal risk.
 
-Applied below, this rule puts exactly one feature — the microphone — in the kernel, and keeps the camera and speaker out of it.
+Applied below, this rule originally put exactly one feature — the microphone — in the kernel. Decision 4 has since taken it out, by bundling someone else's already-signed driver rather than writing one. The rule now holds in its strongest form: **this project ships no kernel-mode code it wrote.** That is a better outcome than the rule was expected to produce, and it was reached by re-reading the product constraint rather than by relaxing the rule.
 
 ### 2. Speaker: WASAPI loopback capture, and no routing concept
 
@@ -73,37 +73,95 @@ Five consequences must be planned for, not discovered:
 
 The `VideoSink` trait absorbs this without change: `push_frame` becomes a write into the shared-memory ring rather than a v4l2 `write`, and `device_label` returns the filter's registered friendly name rather than a device path. This is why the trait's device identifier is specified as an opaque platform-supplied label and not as a path.
 
-### 4. Microphone: the project's own WDM audio driver
+### 4. Microphone: bundle VB-CABLE rather than write a driver
 
-There is no way to avoid this one. WASAPI — and therefore every modern application that captures audio — enumerates only audio endpoints created by a driver. No user-mode API creates an audio input endpoint.
+A driver is unavoidable; **writing one is not.**
+
+WASAPI — and therefore every modern application that captures audio — enumerates only audio endpoints created by a driver. No user-mode API creates an audio input endpoint. That much has not changed.
 
 A DirectShow audio capture filter is the tempting shortcut and does not work. Registering under `CLSID_AudioInputDeviceCategory` makes the device visible to whatever still enumerates audio through DirectShow, which in practice is nothing that matters: Zoom, Discord, browsers, and Teams all go through the MMDevice API. DirectShow remains viable for video and is effectively dead for audio. This asymmetry is the reason the camera and the microphone get different answers despite superficially being the same problem.
 
-Depending on VB-Cable, Virtual Audio Cable, or VoiceMeeter and asking the user to install it is what most comparable products do, and it is what the product constraint rules out.
+What changed is the reading of the product constraint. Asking the user to go and install VB-Cable is what most comparable products do and is what the constraint rules out. **Shipping VB-CABLE inside our own installer is not the same act**, and the Constraints section above says so explicitly: bundling a component authored by someone else satisfies the constraint; telling the user to fetch it does not. The user still installs one application.
 
-The driver is therefore built from Microsoft's `sysvad` sample (`microsoft/Windows-driver-samples`, MIT), as a **cable-style** driver exposing a paired render and capture endpoint. The desktop renders received phone audio into the render half through ordinary WASAPI; applications capture the capture half as an ordinary microphone.
+So the microphone is VB-Audio's standard VB-CABLE, embedded in the UnifiedStream installer and installed silently. The desktop renders received phone audio into `CABLE Input` through ordinary WASAPI; applications capture `CABLE Output` as an ordinary microphone. No driver is written, no driver is signed, and no kernel-mode code in this product is ours.
 
-A capture-only driver fed through a private IOCTL interface was considered and deferred. It is the cleaner result — a cable-style driver makes an extra playback device appear in the user's output list, which is the one visible wart in this design — but it requires more driver-side work and a private control channel, and it can replace the cable-style driver later without changing anything above the `AudioSink` trait. Cable style first; capture-only as polish.
+#### What the licence requires
 
-The `AudioSink` implementation for Windows is "render PCM into a named endpoint over WASAPI". That code is identical whether the endpoint belongs to this project's driver or to a third-party cable, which keeps the funding question in decision 5 from being an architectural fork.
+Confirmed against <https://vb-audio.com/Services/licensing.htm> on 2026-08-09, before any of it was relied on — decision 8's ordering rule applies to dependencies as much as to references.
 
-### 5. Driver signing is a funding decision, not an architectural one
+Redistribution of the free donationware VB-CABLE is permitted, including silent installation from inside another installer, subject to conditions that are **product requirements, not footnotes**:
 
-Installing a kernel-mode driver on Windows 10 1607 or later, with Secure Boot enabled, requires a driver package signed by Microsoft through attestation signing, which in turn requires an EV code-signing certificate and a Partner Center hardware account. Cross-signing with an ordinary certificate has not been viable for new drivers for years. Test signing works for development but requires the user to disable Secure Boot and reboot, which is exactly the post-installation configuration the product constraint forbids.
+- **Standard VB-CABLE only.** VB-CABLE A+B and C+D "cannot be distributed or bundled with other product". Only the single standard cable may be shipped. If the design ever needs a second independent cable, this route does not extend to it and the decision reopens.
+- **The end user must be able to see and identify VB-CABLE as a VB-Audio application.**
+- **The end user must be in a position to donate.** The licence's words: the user "must be in a position to donate/pay license if finding it useful". A credit line the user cannot act on does not satisfy this.
+- **The origin and the donationware nature must both be communicated**, naming `www.vb-cable.com`.
 
-This is the single blocking risk in the Windows plan, and it is commercial rather than technical. Three ways to clear it, all of which satisfy the product constraint:
+A bare "powered by VB-CABLE" credit meets the second condition and misses the third and fourth. The attribution shown in About/Settings must therefore name VB-Audio, say the word *donationware*, and carry a reachable link — for example:
 
-1. **Obtain an EV certificate and sign the project's own driver.** Roughly USD 150–300 per year including the required hardware token, plus a one-time Partner Center registration fee. Certificate authorities that issue to individuals and sole proprietors exist, so a registered company is not necessarily a prerequisite; this should be confirmed for the relevant jurisdiction before the option is priced. Gives full control and is the preferred outcome.
-2. **License redistribution rights for an existing signed driver.** VB-Audio sells redistribution licenses for VB-Cable. The driver is bundled inside this project's installer, so the user still installs one application. Removes the certificate requirement entirely and removes the driver-development work with it, in exchange for a licence fee and a dependency on another vendor's release cadence.
-3. **Redistribute an open-source virtual audio driver that already ships an attestation-signed binary under a permissive licence.** This would be free, and it may not exist. Treat it as a spike with a definite answer required — licence text and signature both verified — and not as an assumption.
+> Virtual microphone provided by **VB-CABLE**, a donationware application from VB-Audio. If you find it useful, please donate at [vb-cable.com](https://www.vb-cable.com).
 
-Until one of these is chosen, the microphone cannot ship on Windows. The camera and the speaker can, because neither requires a driver, which is why the phase plan below reaches a usable Windows build before any of this is decided.
+VB-Audio additionally "encourage[s] distributors (if they are a significant company) to make a significant donation as licensing fee (e.g 500, 1000, 2000 USD ...)". This is an expectation on established companies rather than a condition of the grant, and it is the right thing to honour once the project has revenue. It is recorded here so it is a deliberate deferral and not an oversight.
+
+#### What this costs
+
+Two things, and neither is money.
+
+**The device names are VB-Audio's, not ours.** The user's recording list shows `CABLE Output (VB-Audio Virtual Cable)`, not "UnifiedStream Microphone", and their playback list gains VB-Audio's entries. With our own driver all of them would have carried the product's name. The `AudioSink` trait already specifies its device identifier as an opaque platform-supplied label, so the UI can tell the user exactly which device to select without knowing why it is named that — the same seam that let `device_label` return a DirectShow friendly name instead of a device path.
+
+**The extra playback endpoints are now permanent, and there is more than one.** A cable-style driver makes an extra playback device appear in the user's output list; that was already the one visible wart, and the plan was to replace it later with a capture-only variant. That escape route is gone — the driver is not ours to change.
+
+The wart is also larger than this decision first recorded. Measured on VB-CABLE 3.3.1.7, the driver exposes **two** render endpoints, not one:
+
+```
+ROOT\MEDIA\0005   "VB-Audio Virtual Cable"
+  ├── CABLE Input     render    ← the one the desktop renders into
+  ├── CABLE In 16ch   render    ← a 16-channel variant, unused by this product
+  └── CABLE Output    capture   ← the one applications select as a microphone
+```
+
+So the user's playback list gains two entries they did not ask for, one of which does nothing for them. The count is version-dependent — `CABLE In 16ch` is not in every VB-CABLE release — which means it is not a number this document can state once and rely on.
+
+That has a consequence beyond cosmetics, and it is the reason this paragraph exists rather than a footnote: the two render endpoints share adapter name, INF, driver version, and topology filter, so **resolving "VB-Audio's render endpoint" is ambiguous**, and rendering into the wrong one fails silently — no error from any API, and applications capturing `CABLE Output` simply hear nothing. Borrowing a third party's driver means inheriting whatever endpoints it chooses to expose, in whatever release the user happens to have. Any implementation must resolve its destination unambiguously and refuse rather than guess; `add-windows-microphone` carries the specifics.
+
+The wart, and the ambiguity that comes with it, are the price of not writing, signing, or maintaining a kernel driver. It is still a good trade.
+
+**One thing this does not cost: the code above the seam.** The `AudioSink` implementation for Windows is "render PCM into a named endpoint over WASAPI", and that code is identical whether the endpoint belongs to a driver we wrote or to a third-party cable. This decision said so in its original form, in order to keep the funding question from becoming an architectural fork; that foresight is why taking option 2 is a dependency change and nothing more.
+
+The desktop must detect that the endpoint exists and refuse the stream with guidance when it does not — a portable build, or a user who removed VB-CABLE by hand. That is the existing platform-supplied setup guidance requirement, and needs no new mechanism.
+
+### 5. Driver signing: resolved by taking option 2 at no cost
+
+**Status: closed.** This was the single blocking risk in the Windows plan. It is not one any more, and nothing was paid to clear it.
+
+The problem, recorded because it is why decision 4 came out the way it did: installing a kernel-mode driver on Windows 10 1607 or later, with Secure Boot enabled, requires a driver package signed by Microsoft through attestation signing, which in turn requires an EV code-signing certificate and a Partner Center hardware account. Cross-signing with an ordinary certificate has not been viable for new drivers for years. Test signing works for development but requires the user to disable Secure Boot and reboot, which is exactly the post-installation configuration the product constraint forbids.
+
+Three ways to clear it were identified, all satisfying the product constraint:
+
+1. **Obtain an EV certificate and sign the project's own driver.** Roughly USD 150–300 per year including the required hardware token, plus a one-time Partner Center registration fee. Full control, and the preferred outcome when this was written.
+2. **Redistribute an existing signed driver.** ← **taken**
+3. **Redistribute an open-source attestation-signed driver under a permissive licence.** Free if it exists, and it may not. Never needed.
+
+Option 2 is taken, and the reason it costs nothing is that this decision mispriced it. It was written as "VB-Audio *sells* redistribution licenses … in exchange for a licence fee", which made it look like trading a certificate bill for a licensing bill. VB-Audio's published terms grant redistribution of the standard donationware VB-CABLE — silent installation inside another installer included — against attribution obligations rather than a fee. The obligations are listed in decision 4 and are cheap to meet.
+
+What this buys, beyond the certificate:
+
+- **The driver-development work disappears too.** Not just the signature on `sysvad`, but building it, maintaining it, and owning its bug checks.
+- **Windows is no longer feature-gated behind a purchase.** All three media features can ship.
+- **Decision 1 reaches its strongest form.** No kernel-mode code in this product is ours.
+
+What is taken on in exchange: a dependency on another vendor's release cadence and continued goodwill, the naming and extra-endpoint costs in decision 4, and an attribution requirement that must survive every future redesign of the About screen. That last one is a requirement, not a nicety — it is the consideration for the licence.
+
+The residual signing requirement is Authenticode on our own two filter DLLs, which is ordinary code signing, not attestation, and is a W5 concern.
 
 ### 6. WiX for the installer, not the default NSIS bundler
 
-Tauri's default Windows bundler produces an NSIS installer that cannot install a driver package. The installer becomes a WiX project that performs the whole first-run setup under a single elevation prompt: install the driver via its INF, register both DirectShow filter DLLs, install the application and the WebView2 runtime, and reverse all of it on uninstall.
+**Reopened by decision 4; to be settled in W5.** The premise below no longer holds and the conclusion may not either.
 
-This is worth deciding early because it also determines how release artifacts are produced and how the release workflow is structured, and reworking it after the fact would touch every Windows change.
+The original reasoning: Tauri's default Windows bundler produces an NSIS installer that cannot install a driver package, so the installer becomes a WiX project performing the whole first-run setup under a single elevation prompt — install the driver via its INF, register both DirectShow filter DLLs, install the application and the WebView2 runtime, and reverse all of it on uninstall.
+
+There is no INF to install now. VB-CABLE ships its own signed setup executable with a silent mode, so the installer's job is to *invoke* an installer rather than to *be* a driver installer. What remains is: run VB-CABLE's setup silently, `regsvr32` two DLLs, install the application and WebView2, and reverse all of it on uninstall — all under one elevation prompt. NSIS with install and uninstall hooks can plausibly do that, which would keep the Tauri bundler and delete a whole toolchain from the project.
+
+The standing argument for deciding early — that the choice determines how release artifacts are produced and reworking it later touches every Windows change — now argues for settling it *in* W5 rather than before it, because W5 is the first phase that produces an artifact at all. Uninstall completeness is the property to judge the options against: a leftover CLSID leaves a broken camera in every application's device list, and VB-CABLE's own uninstall must be sequenced correctly rather than orphaned.
 
 ### 7. Repository layout: a `windows/` tree with its own toolchain
 
@@ -113,13 +171,14 @@ UnifiedStream/
 ├── android/          Kotlin, Gradle
 └── windows/          C++, MSBuild
     ├── dshow-camera/   COM filter, x86 and x64, Authenticode-signed
-    ├── audio-driver/   WDM audio driver, INF, attestation-signed
-    └── installer/      WiX
+    └── installer/      bundler chosen in W5 (decision 6)
 ```
 
-The filter and the driver are C++ projects. Rust is not a realistic option for either: a DirectShow filter is built on the C++ `strmbase` base classes, and a WDM audio miniport is portclass COM in C++. `windows-drivers-rs` exists but is preview-stage and oriented toward KMDF rather than audio.
+`audio-driver/` was planned here and will not exist: decision 4 bundles VB-CABLE instead of building a WDM miniport, so the only C++ this repository contains is the DirectShow filter. That is a real reduction in the size of this tree, not a relabelling.
 
-Cargo cannot build these. They are separate MSBuild artifacts consumed by the installer, and CI needs a Windows job that builds them independently of the Rust workspace check introduced in `decouple-platform-integrations`.
+The filter is a C++ project because Rust is not a realistic option for it: a DirectShow filter is built on the C++ `strmbase` base classes. (The same was true of a WDM audio miniport, which is portclass COM in C++ — `windows-drivers-rs` exists but is preview-stage and oriented toward KMDF rather than audio. Moot now.)
+
+Cargo cannot build it. It is a separate MSBuild artifact consumed by the installer, and CI needs a Windows job that builds it independently of the Rust workspace check introduced in `decouple-platform-integrations` — the `windows-native` job, which now exists.
 
 ### 8. Licence hygiene: do not read `obs-virtualcam`
 
@@ -127,37 +186,55 @@ Cargo cannot build these. They are separate MSBuild artifacts consumed by the in
 
 Work from `microsoft/Windows-classic-samples` for the DirectShow base classes and `microsoft/Windows-driver-samples` for `sysvad`, both MIT. Confirm the licence of any reference implementation before reading its source, not after.
 
+The `sysvad` half of that instruction is moot after decision 4 — no driver is written, so none is read. The rule itself is not, and decision 4 is where it was applied next: VB-Audio's redistribution terms were read before the dependency was chosen, not after it was shipped. The rule generalises from *source you read* to *anything you take*.
+
 **Resolved by decision 9: the repository publishes under MIT.** `obs-virtualcam` remains unreadable, which was true before that decision and stays true after it.
 
 ### 9. The repository publishes under MIT
 
 `LICENSE` at the root, MIT, applying to the repository as a whole. Added by `add-windows-directshow-camera`, which is the change that first vendored third-party source and therefore the first one that had to answer "compatible with what".
 
-Every third-party source the Windows work depends on is MIT — `strmbase` from `Windows-classic-samples` in W3, `sysvad` from `Windows-driver-samples` in W4 — so there is no compatibility question left to answer. MIT also leaves every route in decision 5 open: bundling VB-Audio's proprietary signed driver under a redistribution licence is a live option for the microphone, and a copyleft licence here would have foreclosed it while the funding decision is still unmade.
+Every third-party **source** the Windows work depends on is MIT — and after decision 4 that is just `strmbase` from `Windows-classic-samples` in W3, since `sysvad` is no longer vendored.
+
+The clause that mattered was the other one. This decision recorded that MIT "leaves every route in decision 5 open: bundling VB-Audio's proprietary signed driver under a redistribution licence is a live option for the microphone, and a copyleft licence here would have foreclosed it while the funding decision is still unmade." That live option is now the chosen one. A copyleft licence chosen here would have cost the project the free route to its third media feature, and the cost would have been discovered a phase later, when it was unpayable.
+
+Note what the dependency actually is, because it is a new category for this repository: VB-CABLE is redistributed as a **signed binary under a grant**, not vendored as source under a permissive licence. Nothing of it enters this repository's source tree, MIT does not extend to it, and it carries obligations of its own — enumerated in decision 4 — that no other dependency here imposes.
 
 The ordering is the part worth keeping: a licence checked after the fact cannot be acted on, because the knowledge cannot be given back. `repository-quality-gates` states this as a checkable requirement rather than leaving it in this document alone.
 
 ## Risks
 
-- **[Driver signing is never funded]** → The microphone does not ship on Windows. The camera and the speaker are unaffected, and the phase plan is ordered so that this is discovered with a working two-feature build in hand rather than at the end.
+- ~~**[Driver signing is never funded]**~~ → Retired by decision 5. No certificate is needed and no driver is written.
+- **[VB-Audio withdraws or changes the redistribution terms]** → The microphone stops shipping on Windows; the camera and the speaker are unaffected, exactly as under the retired risk above. The fallback is the original plan — write and sign a `sysvad`-derived driver — which is why decisions 4 and 5 keep the reasoning for it rather than deleting it. `AudioSink` does not change either way. Pin and archive the exact redistributed VB-CABLE installer alongside the release rather than fetching it at build time, so a change upstream cannot retroactively alter what a shipped installer contains.
+- **[The attribution requirement is lost in a later redesign]** → The licence is granted against attribution, so dropping it from About/Settings converts a compliant product into an infringing one silently, with no build failure to catch it. It belongs in a spec as a checkable requirement, not only in this document.
 - **[The DirectShow filter is invisible in an application users care about]** → Documented as a known limitation, as the `v4l2loopback` prerequisite is on Linux. The upgrade path to Media Foundation or AVStream exists and is contained behind `VideoSink`.
 - **[Shared-memory frame transport across a process boundary is subtle]** → Single producer, multiple consumers, no consumer trusted to be alive. Sequence-numbered slots, no blocking wait on a consumer, and drop rather than stall — the same lossy-by-design policy the existing transport and jitter buffer already use.
-- **[A kernel-mode fault reaches users]** → Decision 1 keeps exactly one component in the kernel, and it is built from a Microsoft sample rather than written from scratch.
-- **[Windows development requires Secure Boot to be disabled on the development machine]** → True while test signing, and it applies to the driver work only. Phases W1 to W3 need no test signing.
+- **[A kernel-mode fault reaches users]** → Decision 4 removed the last kernel-mode component this project would have written. The remaining kernel code is VB-Audio's, already signed and already deployed on a large installed base.
+- ~~**[Windows development requires Secure Boot to be disabled on the development machine]**~~ → Retired with the driver. No phase test-signs anything.
 - **[The C++ subprojects diverge from the Rust workspace]** → CI builds them on every pull request once they exist, and the shared-memory protocol between the filter and the desktop is versioned with an explicit header field so a stale filter refuses rather than misreads.
 
 ## Phase plan
 
 | Phase | Scope | Kernel? | Needs signing? |
 | --- | --- | --- | --- |
-| W1 | Decouple platform integrations: traits, factories, unsupported fallbacks, Windows CI leg | No | No |
+| W1 | Decouple platform integrations: traits, factories, unsupported fallbacks, Windows CI leg — **implemented** | No | No |
 | W2 | Speaker over WASAPI loopback, with silent keep-alive and device-change following — **implemented** | No | No |
-| W3 | Camera over the DirectShow filter, with the shared-memory frame transport and installer registration — **implemented** | No | Authenticode only |
-| W4 | Microphone over the project's own WDM audio driver, with the WiX installer | **Yes** | **Yes** |
+| W3 | Camera over the DirectShow filter, with the shared-memory frame transport and manual `regsvr32` registration — **implemented** | No | No |
+| W4 | Microphone by bundling VB-CABLE and rendering into its endpoint over WASAPI, with the attribution it requires | No, not ours | No |
+| W5 | Windows release: installer, Authenticode on the filter DLLs, release workflow, versioned artifacts, user documentation, and a Windows smoke test | No | Authenticode only |
 
-W1 through W3 produce a Windows build that is genuinely useful — a wireless speaker and a virtual webcam — without spending anything on certificates. The decision in section 5 can therefore be made against a working product rather than against a plan.
+No phase needs a certificate this project must buy, and no phase writes kernel-mode code. That was not true when this plan was first written; decision 4 made it true.
 
-W1 and W2 have OpenSpec changes (`decouple-platform-integrations` and `add-windows-speaker-capture`). W4 is named here so the sequencing is on the record and needs its own proposal.
+**W5 is not dependent on W4 — it is only sequenced after it.** Packaging the camera and the speaker requires nothing from the microphone, and while decision 5 was open the ordering mattered a great deal: with W5 behind a phase blocked on a purchase, "the decision can be made against a working product" would have been false, because no product would ever have reached a user. Decision 5 is closed and W4 is cheap, so the ordering now costs little. The independence is recorded because it is the escape hatch if W4 stalls for any reason — a terms change, an integration surprise — and because a reader should not have to re-derive it.
+
+Two things follow for W5 regardless of ordering:
+
+- **The installer bundler is chosen there**, not before (decision 6, reopened).
+- **The Windows smoke test is written there.** CI cannot cover this: the runners have no audio or video device, which the `windows-native` job states as a standing constraint on what may be added to the suite. WASAPI loopback against a real endpoint, the silent keep-alive, default-device-change following, the filter opening in Zoom, Discord, and Chrome, and VB-CABLE appearing as a microphone are all verified by hand or not at all. The Linux MVP has `docs/release-smoke-test.md`; Windows has no equivalent, and shipping without one would make the first release the first test.
+
+W1, W2, and W3 have OpenSpec changes (`decouple-platform-integrations`, `add-windows-speaker-capture`, then `add-windows-camera-frame-transport` and `add-windows-directshow-camera`). W4 and W5 are named here so the sequencing is on the record; each needs its own proposal.
+
+Earlier proposals defer packaging to "W4" — see the non-goals of `add-windows-speaker-capture`, `add-windows-camera-frame-transport`, and `add-windows-directshow-camera`. Those are archived and correct as written; the phase they meant is now W5.
 
 W3 is delivered as two changes, because the camera is the only feature whose frames leave the desktop's address space and the crossing is code that fails silently — a torn read is a corrupt frame, not a crash:
 
@@ -168,9 +245,14 @@ Writing the ring at the same time as the first C++ in this repository, a new too
 
 ## Open questions
 
-- Which of the three signing options in decision 5 is taken, and by when. Nothing in W1 to W3 depends on the answer.
-- Whether the cable-style driver's extra playback endpoint can be hidden from the user's output device list, or whether the capture-only variant is required to achieve that. Deferred to W4.
+- Which installer bundler W5 uses, now that there is no INF to install (decision 6, reopened). Judge the options on uninstall completeness.
+- How VB-CABLE's presence is detected, and what the desktop shows when it is absent. The mechanism exists — platform-supplied setup guidance — but the failure is unusual: the component is normally installed by our own installer, so its absence means someone removed it or is running an unpackaged build.
+- Which endpoint property distinguishes `CABLE Input` from the driver's other render endpoints across VB-CABLE releases. Only 3.3.1.7 has been examined, and the rule `add-windows-microphone` adopts is provisional until an older and a newer release have been measured. This is the detection question's harder half: absence is loud, and picking the wrong endpoint is silent.
+- At what point the project makes the "significant donation as licensing fee" VB-Audio encourages. Not a condition of the grant, deferred until there is revenue, and recorded so the deferral stays deliberate.
 
 Closed:
+
+- ~~Which of the three signing options in decision 5 is taken, and by when.~~ Option 2, at no cost. See decision 5.
+- ~~Whether the cable-style driver's extra playback endpoint can be hidden from the user's output device list, or whether the capture-only variant is required to achieve that.~~ Moot, and not in the way it was expected to be: the driver is no longer ours, so neither hiding the endpoint nor switching to a capture-only variant is available. The extra endpoint is permanent, and decision 4 accepts it as the price.
 
 - ~~Whether Windows 10 support is still required at the time W3 is implemented.~~ Re-checked when `add-windows-camera-frame-transport` was written, and decision 3 stands unchanged. The development machine for this project runs Windows 10, so `MFCreateVirtualCamera` is not merely a platform floor to raise but a path that cannot be exercised at all here; it would additionally require repackaging the application as MSIX, which decision 6 does not plan for. The DirectShow filter is the path.
