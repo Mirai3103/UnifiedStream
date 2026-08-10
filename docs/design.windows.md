@@ -112,7 +112,7 @@ Two things, and neither is money.
 
 The wart is also larger than this decision first recorded. Measured on VB-CABLE 3.3.1.7, the driver exposes **two** render endpoints, not one:
 
-```
+```text
 ROOT\MEDIA\0005   "VB-Audio Virtual Cable"
   ├── CABLE Input     render    ← the one the desktop renders into
   ├── CABLE In 16ch   render    ← a 16-channel variant, unused by this product

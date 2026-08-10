@@ -64,7 +64,7 @@
 
 ## 7. Verification
 
-- [ ] 7.1 `cargo fmt --all -- --check`, `cargo clippy --workspace --lib --bins -- -D warnings`, and `cargo test --workspace` pass on Linux with no new warnings
+- [x] 7.1 `cargo fmt --all -- --check`, `cargo clippy --workspace --lib --bins -- -D warnings`, and `cargo test --workspace` pass on Linux with no new warnings
 - [x] 7.2 The same three commands pass on Windows, including the full test suite
 - [x] 7.3 Frontend suite passes, including the new attribution test
 - [x] 7.4 Manual Windows run: install VB-CABLE by hand, pair, enable the microphone, select `CABLE Output` in a conferencing application, and confirm the phone's audio is heard
@@ -74,5 +74,5 @@
 - [x] 7.8 Manual Windows endpoint-selection test: on a machine where both `CABLE Input` and `CABLE In 16ch` are present, confirm from the reported device label and the candidate log that `CABLE Input` was chosen, then rename `CABLE Input` in the Sound control panel and confirm resolution still succeeds
 - [x] 7.9 Manual Windows absence test: uninstall VB-CABLE and confirm the microphone refuses with guidance naming what is missing, while the camera and speaker continue to work
 - [x] 7.10 Manual Windows loop test: set the system output to `CABLE Input`, enable the speaker, and confirm it is refused with the conflict named rather than producing feedback
-- [ ] 7.11 Manual Linux regression: the microphone path behaves exactly as before, including the virtual source appearing and being destroyed with the stream
-- [ ] 7.12 Sync the delta specs into `openspec/specs/`, archive the change, and record the commands run in the pull request template
+- [x] 7.11 Manual Linux regression: the microphone path behaves exactly as before, including the virtual source appearing and being destroyed with the stream
+- [x] 7.12 Sync the delta specs into `openspec/specs/`, archive the change, and record the commands run in the pull request template

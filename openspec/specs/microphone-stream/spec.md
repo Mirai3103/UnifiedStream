@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The end-to-end virtual microphone: phone-side audio capture and encoding, the mic payload format on stream ID 2, desktop-side decoding and playback into a PipeWire virtual source, mic controls (mute, gain, noise suppression), and level indication in both UIs.
+The end-to-end virtual microphone: phone-side audio capture and encoding, the mic payload format on stream ID 2, desktop-side decoding and playback into a platform-provided virtual input, mic controls (mute, gain, noise suppression), and level indication in both UIs.
 
 See `openspec/specs/protocol.md` §3.9 and §5 for the normative wire format these requirements are implemented against.
 
@@ -71,25 +71,87 @@ Microphone audio SHALL be carried on stream ID 2, one 20 ms audio frame per tran
 
 ### Requirement: Desktop virtual audio source
 
-The desktop SHALL expose received microphone audio as a PipeWire virtual source named "UnifiedStream Microphone" that ordinary applications can select as an input device. The source SHALL exist only while a microphone stream is accepted.
+The desktop SHALL present received microphone audio as an input device that ordinary applications can select, delivering decoded audio to it only while a microphone stream is accepted. How that input is presented is a platform concern: a platform MAY create a virtual source that exists for the lifetime of the stream, or MAY render into an input endpoint supplied by a separately installed driver, which exists whether or not a stream is active.
+
+Where the platform's input depends on a component that must be installed before the input exists, its absence SHALL be reported as setup guidance in the same way as any other missing prerequisite, and SHALL NOT be reported as the platform having no implementation at all.
+
+The device identifier shown in the user interface SHALL be a label supplied by the platform implementation, so a user can tell which device to select in the application where they will use it. The label MUST NOT be assumed to carry this product's name: a platform that borrows an endpoint from a component it did not author presents that component's name, and the user still has to be told which one to pick.
 
 #### Scenario: Applications see a normal microphone
 
-- **WHEN** the microphone stream is accepted
-- **THEN** a PipeWire node named "UnifiedStream Microphone" with media class Audio/Source appears
-- **AND** an application recording from it receives the phone's audio
+- **WHEN** the microphone stream is accepted and audio is arriving
+- **THEN** an application that selects the platform's input device receives the phone's audio
+- **AND** the desktop UI shows the platform-supplied identifier of the device being rendered into
 
-#### Scenario: The source is removed when the stream ends
+#### Scenario: Audio stops when the stream ends
 
 - **WHEN** the microphone stream is stopped or the session ends for any reason
-- **THEN** the virtual source node is destroyed
-- **AND** no orphaned node remains after the desktop app exits
+- **THEN** the desktop stops delivering audio to the platform's input
+- **AND** an application still recording from that input receives silence rather than stale or repeated audio
+- **AND** any device object the desktop itself created is destroyed, with none left behind after the desktop application exits
+
+#### Scenario: A platform whose audio input component is not installed
+
+- **WHEN** a microphone stream start arrives on a platform that presents its input through a separately installed component, and that component is not installed
+- **THEN** the desktop refuses the stream with reason `internal`
+- **AND** the desktop UI shows that the component is missing and, where the platform can name one, the command or action that installs it
+- **AND** the same platform's other media features are unaffected
 
 #### Scenario: Audio system unavailability is reported
 
-- **WHEN** the desktop cannot create the virtual source (e.g., PipeWire is not running)
+- **WHEN** the desktop cannot deliver audio to the platform's input because the platform's audio system is unavailable
 - **THEN** it refuses the microphone stream
-- **AND** the desktop UI shows that the virtual source is unavailable
+- **AND** the desktop UI shows the platform's message describing what is unavailable
+
+### Requirement: Received microphone audio reaches only the virtual input
+
+The desktop SHALL render received microphone audio exclusively to the input device the platform implementation resolves for that purpose. It MUST NOT render that audio to the system's default output, to the user's selected output, or to any endpoint the user is listening on.
+
+This is a privacy and safety property, not an implementation detail. The audio is the user's own voice and whatever their phone's microphone can hear, captured in a different room from the PC in the ordinary case. Rendering it to the default output plays it aloud to whoever is near the PC, and where the speaker stream is also active it is fed straight back to the phone. Resolving the destination by identity rather than by taking whatever endpoint is currently default is what makes this hold when the user changes their output device mid-stream.
+
+#### Scenario: The phone's audio is never heard on the PC's speakers
+
+- **WHEN** a microphone stream is active
+- **THEN** no received microphone audio is rendered to the endpoint the user's system output is set to
+- **AND** the phone's audio is audible only to applications that have selected the virtual input
+
+#### Scenario: The user changes their default output mid-stream
+
+- **WHEN** the user selects a different system output device while a microphone stream is active
+- **THEN** the destination of received microphone audio is unchanged
+- **AND** no received audio is rendered to either the previous or the new default output
+
+#### Scenario: The resolved input cannot be found
+
+- **WHEN** the platform implementation cannot resolve the specific input device it renders into
+- **THEN** the desktop refuses the microphone stream with setup guidance
+- **AND** it does not fall back to any other endpoint
+
+### Requirement: The destination endpoint is resolved unambiguously
+
+Where a platform renders into an endpoint supplied by a separately installed component, that component MAY expose several endpoints that are indistinguishable by vendor identity alone. The platform implementation SHALL resolve its destination to exactly one endpoint, and SHALL refuse the stream when it cannot — whether because no candidate matched or because more than one did.
+
+It MUST NOT select among several matching candidates by enumeration order, by position, or by any other property that the operating system does not guarantee. It MUST NOT depend on a property the user can edit, and MUST NOT depend on an identifier that is generated per installation rather than supplied by the component.
+
+This is stated separately from resolution failing outright because the two have opposite symptoms. A failed match is loud: the stream is refused and the user is told what is missing. A wrong match is silent: rendering succeeds, every API reports success, and the only observable effect is that applications selecting the component's input hear nothing. The second is the one that reaches users, and it is not detectable by the desktop after the fact.
+
+#### Scenario: The component exposes several candidate endpoints
+
+- **WHEN** the platform's component exposes more than one endpoint carrying its vendor identity, only one of which is the intended destination
+- **THEN** the desktop renders into the intended endpoint and no other
+- **AND** the choice does not depend on the order in which the operating system enumerated them
+
+#### Scenario: The intended endpoint cannot be distinguished
+
+- **WHEN** more than one candidate endpoint survives the platform implementation's discrimination
+- **THEN** the desktop refuses the microphone stream rather than selecting one of them
+- **AND** the desktop UI reports that the destination could not be identified, distinguishably from the component being absent
+
+#### Scenario: The user renames the destination device
+
+- **WHEN** the user has renamed the component's endpoint through an operating-system facility for doing so
+- **THEN** resolution still succeeds and renders into the same endpoint
+- **AND** the label shown to the user is the current name, so it matches what they see in the application they select the input from
 
 ### Requirement: Receive-side jitter buffering
 
