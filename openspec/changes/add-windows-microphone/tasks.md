@@ -12,7 +12,7 @@
 
 ## 2. Endpoint resolution
 
-- [ ] 2.0 **Spike before anything else in this section:** install one older and one newer VB-CABLE release, enumerate their render endpoints, and record adapter name, device description, channel count, and KS filter name for each. Confirm or replace the two-channel discrimination rule (design decision 2, "Open, and to be settled"). Record the results in the design so the rule stops being provisional
+- [ ] 2.0 **Measure what is obtainable, best-effort and not blocking:** for every VB-CABLE release available from VB-Audio — in practice the current one — enumerate its render endpoints and record adapter name, device description, channel count, and KS filter name. Older releases have no official source and are not worth fetching from third-party mirrors when the artifact is a kernel-mode driver, so the two-channel rule stays provisional rather than verified. Record what was measured and against which version
 - [ ] 2.1 Add an endpoint resolver to `platform/windows.rs` that enumerates render endpoints and builds a **candidate list**, matching the family on `PKEY_DeviceInterface_FriendlyName` (the adapter name, which the Sound control panel's rename does not touch) and corroborating with the hardware identifier `VBAudioVACWDM` where the driver-identity property is readable
 - [ ] 2.2 Reject candidates whose device format declares more than two channels, so `CABLE In 16ch` cannot be selected in place of `CABLE Input`; comment that both endpoints share adapter name, INF, driver version, and topology filter, and that rendering into the wrong one is silent
 - [ ] 2.3 Refuse unless exactly one candidate survives — zero is "not installed", more than one is ambiguity — and never take the first of several

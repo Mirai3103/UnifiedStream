@@ -247,7 +247,7 @@ Writing the ring at the same time as the first C++ in this repository, a new too
 
 - Which installer bundler W5 uses, now that there is no INF to install (decision 6, reopened). Judge the options on uninstall completeness.
 - How VB-CABLE's presence is detected, and what the desktop shows when it is absent. The mechanism exists — platform-supplied setup guidance — but the failure is unusual: the component is normally installed by our own installer, so its absence means someone removed it or is running an unpackaged build.
-- Which endpoint property distinguishes `CABLE Input` from the driver's other render endpoints across VB-CABLE releases. Only 3.3.1.7 has been examined, and the rule `add-windows-microphone` adopts is provisional until an older and a newer release have been measured. This is the detection question's harder half: absence is loud, and picking the wrong endpoint is silent.
+- Which endpoint property distinguishes `CABLE Input` from the driver's other render endpoints across VB-CABLE releases. Only 3.3.1.7 has been examined, and the rule `add-windows-microphone` adopts is provisional. It will stay provisional: VB-Audio publishes the current release only, so there is no supported way to measure the rule against the versions users actually have. The answer is to make a wrong rule refuse loudly rather than to make the rule certain, and a report from a real machine is what reopens this.
 - At what point the project makes the "significant donation as licensing fee" VB-Audio encourages. Not a condition of the grant, deferred until there is revenue, and recorded so the deferral stays deliberate.
 
 Closed:
