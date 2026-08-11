@@ -383,6 +383,13 @@ function App() {
                   <div className="theme-options" role="radiogroup" aria-label="Theme"><button role="radio" aria-checked={theme === "dark"} className={theme === "dark" ? "is-selected" : ""} onClick={() => setTheme("dark")}><span className="theme-swatch dark-swatch"><Moon size={16} aria-hidden="true" /></span>Dark</button><button role="radio" aria-checked={theme === "light"} className={theme === "light" ? "is-selected" : ""} onClick={() => setTheme("light")}><span className="theme-swatch light-swatch"><Sun size={16} aria-hidden="true" /></span>Light</button></div>
                 </Panel>
                 <Panel title="Runtime contract" eyebrow="About"><p className="body-copy">The redesign uses the existing discovery, session, media, and telemetry backend. Illustrative design controls without runtime support are intentionally not interactive.</p><dl className="detail-grid"><div><dt>Version</dt><dd className="mono">0.1.0</dd></div><div><dt>Desktop backend</dt><dd>Platform virtual devices</dd></div><div><dt>Protocol</dt><dd>Trusted LAN</dd></div></dl></Panel>
+                {/* Not conditional on the platform. VB-CABLE ships only in the Windows build, but
+                    a notice rendered only where the component runs is a notice a refactor can
+                    remove from every other build without failing anything — and the obligation is
+                    on what is distributed, which is checked here rather than at run time. */}
+                <Panel title="Third-party components" eyebrow="About">
+                  <p className="body-copy">The Windows microphone plays the phone's audio into <strong>VB-CABLE Virtual Audio Device</strong>, donationware by <strong>VB-Audio Software</strong>, which is redistributed with this application under the terms its author grants. If you find it useful, it can be donated for or licensed at <a href="https://vb-cable.com" target="_blank" rel="noreferrer">vb-cable.com</a>.</p>
+                </Panel>
               </div>
             )}
           </div>

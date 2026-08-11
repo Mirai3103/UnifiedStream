@@ -187,6 +187,44 @@ describe("desktop application shell", () => {
     expect(screen.queryByRole("button", { name: "Copy" })).toBeNull();
   });
 
+  // VB-CABLE is redistributed under a grant conditioned on the end user being able to identify the
+  // component and its author, and being "in a position to donate/pay license if finding it
+  // useful". That is the consideration for the licence, not a courtesy credit, so it is checked
+  // rather than reviewed: deleting the notice breaks no build and fails no other test, and turns a
+  // compliant product into an infringing one silently.
+  //
+  // Asserted against the rendered surface rather than against a source constant, because a notice
+  // that exists in the source and is never rendered satisfies nothing — and a component refactor
+  // is exactly how that happens.
+  it("carries the redistributed component's attribution where a user can act on it", async () => {
+    render(<App />);
+    await screen.findByText("Media bridge");
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Settings" }));
+
+    const settings = screen.getByText("Third-party components").closest("section");
+    expect(settings).not.toBeNull();
+    const notice = within(settings as HTMLElement);
+
+    // The component, so the user knows what is being attributed.
+    expect(notice.getByText(/VB-CABLE/)).toBeInTheDocument();
+    // Its author, so the user knows whom to pay.
+    expect(notice.getByText(/VB-Audio/)).toBeInTheDocument();
+    // The term the grant itself uses.
+    expect((settings as HTMLElement).textContent).toMatch(/donationware/i);
+    // And the means of acting on it: naming the component alone does not satisfy the grant.
+    const link = notice.getByRole("link", { name: /vb-cable\.com/ });
+    expect(link).toHaveAttribute("href", expect.stringContaining("vb-cable.com"));
+  });
+
+  it("shows the attribution on every platform rather than only where the component runs", async () => {
+    // A platform-conditional render is the one way this notice could be dropped from a shipped
+    // build without the check above noticing, so the absence of that condition is itself asserted.
+    await renderWith({ caps: ["cam", "spk"] });
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Settings" }));
+
+    expect(screen.getByText("Third-party components")).toBeInTheDocument();
+  });
+
   it("names no platform in the text it substitutes for a missing device label", async () => {
     render(<App />);
     await screen.findByText("Media bridge");

@@ -15,14 +15,18 @@
 //! ```text
 //!               audio_capture      audio_sink        audio_routing
 //!   linux       linux::…           linux::…          Some(linux::…)
-//!   windows     windows::…         unsupported::…    None
+//!   windows     windows::…         windows::…        None
 //!   other       unsupported::…     unsupported::…    None
 //! ```
 //!
-//! A partially supported platform names its own gaps in its own module — `windows.rs` re-exports
-//! what it has not written yet — so the table above stays in one place and the gap is explicit
-//! at the point where a later phase closes it. Gating each factory's body separately here would
-//! put three independent tables in the module that exists to have one.
+//! A partially supported platform names its own gaps in its own module — a module re-exports
+//! whatever it has not written yet — so the table above stays in one place and each gap is
+//! explicit at the point where a later phase closes it. Gating each factory's body separately here
+//! would put three independent tables in the module that exists to have one.
+//!
+//! Windows' `None` in the last column is not a gap: capturing system audio there means reading the
+//! endpoint the user already chose, so there is no default output to take over and the capability
+//! does not exist rather than existing and failing.
 
 #[cfg(target_os = "linux")]
 mod linux;

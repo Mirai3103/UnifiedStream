@@ -102,6 +102,35 @@ Registering the filter is not part of building it. `regsvr32` from an elevated p
 architecture at a time — the desktop's setup hint names the exact command for whichever half is
 missing.
 
+### VB-CABLE, for the microphone
+
+The Windows microphone renders into VB-CABLE's playback device rather than creating one, so nothing
+in this repository builds it and nothing installs it yet — bundling it inside the installer is W5.
+Until then it is a **manual prerequisite for running the microphone locally**, and its absence is
+why the Microphone card refuses on a fresh development machine:
+
+1. Install VB-CABLE (donationware, by VB-Audio) from <https://vb-cable.com>. It is a signed
+   kernel-mode driver; the installer wants elevation and a reboot.
+2. Confirm both halves of the cable appear — `CABLE Input` under playback, `CABLE Output` under
+   recording.
+3. Leave your system output on a real playback device. Pointing it at `CABLE Input` is a supported
+   configuration that produces a feedback loop, which is why the Speaker stream refuses while it
+   holds.
+
+The microphone can then be exercised without a phone, which is also how the endpoint discrimination
+is measured on a machine:
+
+```powershell
+cargo run -p unifiedstream-audio --example wasapi_mic
+```
+
+It resolves the destination, logs every VB-Audio playback device it considered and why each was
+accepted or rejected, and plays a tone for five seconds — select `CABLE Output` in any recording
+application to hear it. CI cannot cover any of this: the Windows runners have no audio device.
+
+Obligations that come with redistributing VB-CABLE, and the check that keeps them satisfied, are in
+[docs/third-party-notices.md](docs/third-party-notices.md).
+
 Record the commands you ran in the pull-request template. Explain any relevant check you could not run locally.
 
 ## Open and merge the pull request

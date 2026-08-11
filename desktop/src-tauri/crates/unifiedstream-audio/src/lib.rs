@@ -14,16 +14,20 @@ mod pipewire_sink;
 #[cfg(target_os = "linux")]
 mod pipewire_source;
 pub mod platform;
+mod render_convert;
 #[cfg(target_os = "linux")]
 mod routing;
+mod sample;
 
 pub use capture::FrameChunker;
-pub use convert::{AudioConverter, SampleType, SourceFormat};
+pub use convert::{AudioConverter, SourceFormat};
 pub use jitter::{JitterBuffer, JitterStats, JITTER_CAP_FRAMES, JITTER_TARGET_FRAMES};
 #[cfg(target_os = "linux")]
 pub use pipewire_sink::{PipeWireSpeakerSink, SINK_NODE_ID, SINK_NODE_NAME};
 #[cfg(target_os = "linux")]
 pub use pipewire_source::PipeWireSource;
+pub use render_convert::{EndpointFormat, RenderConverter};
+pub use sample::SampleType;
 
 /// Called from the capture implementation's own thread with each complete frame of samples.
 ///
