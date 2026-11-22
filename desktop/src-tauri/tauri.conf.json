@@ -13,9 +13,9 @@
     "windows": [
       {
         "title": "UnifiedStream",
-        "width": 820,
-        "height": 900,
-        "minWidth": 460,
+        "width": 1080,
+        "height": 720,
+        "minWidth": 480,
         "minHeight": 560
       }
     ],
