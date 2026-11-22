@@ -6,8 +6,10 @@ plugins {
 
 android {
     namespace = "com.laffy.unifiedstream"
+    // material3 1.5.0 and the Compose 1.13 libraries behind it require compileSdk 37.1.
+    // targetSdk stays at 36 so this does not opt the app into new runtime behavior.
     compileSdk {
-        version = release(36) {
+        version = release(37) {
             minorApiLevel = 1
         }
     }
@@ -45,11 +47,21 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        // Material 3 Expressive components are still marked experimental in material3 1.5.0.
+        // Opting in once here keeps a later graduation from touching every UI file.
+        optIn.add("androidx.compose.material3.ExperimentalMaterial3ExpressiveApi")
+        optIn.add("androidx.compose.material3.ExperimentalMaterial3Api")
+    }
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.core)
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)

@@ -5,7 +5,7 @@
 Define the shared presentation, navigation, accessibility, and live-state requirements for the UnifiedStream Android and desktop clients.
 ## Requirements
 ### Requirement: Reference-driven platform presentation
-The Android client SHALL implement the visual roles, typography hierarchy, component language, and layout character defined by its Markdown and HTML references in `design/`, using native Compose components rather than shipping the presentation-board examples. The desktop client SHALL implement the signal-path console presentation defined by this specification, using native React/Tauri components.
+The Android client SHALL be built on Material 3 Expressive, using native Compose components rather than shipping presentation-board examples. The desktop client SHALL implement the signal-path console presentation defined by this specification, using native React/Tauri components.
 
 #### Scenario: Desktop renders the streaming-console design
 - **WHEN** the desktop client opens at a supported wide window size
@@ -13,7 +13,7 @@ The Android client SHALL implement the visual roles, typography hierarchy, compo
 
 #### Scenario: Android renders the Material companion design
 - **WHEN** the Android client opens on a supported phone
-- **THEN** it presents the documented Material 3 tonal surfaces, rounded control groups, title navigation, stream cards, and mobile typography roles without a bottom navigation bar
+- **THEN** it presents Material 3 Expressive components, including the expressive motion scheme, expressive shapes, emphasized type roles, a collapsing flexible title bar, toggle buttons for streams, and connected button groups for choices, using the UnifiedStream color palette and without a bottom navigation bar
 
 #### Scenario: Presentation-board decoration is excluded
 - **WHEN** either shipped client renders its interface
@@ -131,15 +131,15 @@ All redesigned interactive elements SHALL expose an accessible name and state, s
 - **THEN** labels and values reflow without hiding required actions or communicating state through truncated text alone
 
 ### Requirement: State-driven restrained motion
-Motion SHALL communicate live or transitional state, SHALL NOT be required to understand or operate the interface, and SHALL respect platform reduced-motion or disabled-animation preferences.
+Motion SHALL communicate live or transitional state, SHALL NOT be required to understand or operate the interface, and SHALL respect platform reduced-motion or disabled-animation preferences. Android MAY use spring-based shape morphing and expressive progress indicators for this purpose.
 
 #### Scenario: Live state animation
-- **WHEN** connection, discovery, recording, switch, or audio-level state changes and animation is enabled
-- **THEN** the corresponding restrained indicator may animate without shifting surrounding controls or blocking input
+- **WHEN** connection, discovery, recording, stream activation, or audio-level state changes and animation is enabled
+- **THEN** the corresponding indicator may animate its shape, position, or amplitude without shifting surrounding controls or blocking input
 
 #### Scenario: Reduced motion
 - **WHEN** the operating system or browser requests reduced motion or disables animations
-- **THEN** nonessential movement stops and the same state remains understandable through static visual and textual cues
+- **THEN** nonessential movement stops and the same state remains understandable through static shape, iconography, and textual cues
 
 ### Requirement: Platform launcher identity
 The desktop and Android packages SHALL use a cohesive UnifiedStream launcher mark that remains recognizable at required platform sizes and uses the available safe area without excessive empty padding.
