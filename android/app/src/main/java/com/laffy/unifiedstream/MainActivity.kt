@@ -9,22 +9,23 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -51,6 +53,7 @@ import com.laffy.unifiedstream.ui.MicControls
 import com.laffy.unifiedstream.ui.SettingsDestination
 import com.laffy.unifiedstream.ui.SpeakerControls
 import com.laffy.unifiedstream.ui.UnifiedStreamViewModel
+import com.laffy.unifiedstream.ui.connectionSubtitle
 import com.laffy.unifiedstream.ui.theme.UnifiedStreamTheme
 import com.laffy.unifiedstream.video.CameraFacing
 
@@ -210,12 +213,16 @@ fun UnifiedStreamApp(
         onVolumeChange = viewModel::setSpeakerVolume,
     )
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
-        modifier = modifier,
+        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
-            androidx.compose.foundation.layout.Column {
+            Column {
                 UnifiedTopBar(
                     destination = destination,
+                    subtitle = connectionSubtitle(connection),
+                    scrollBehavior = scrollBehavior,
                     onBack = ::navigateBack,
                     onSettings = { navigate(AppDestination.SETTINGS) },
                 )
@@ -274,27 +281,28 @@ fun UnifiedStreamApp(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The title bar shared by every destination. It collapses on scroll, shows the live connection
+ * summary as its subtitle, and always exposes Back and Settings as labelled 48 dp icon actions.
+ */
 @Composable
 fun UnifiedTopBar(
     destination: AppDestination,
+    subtitle: String? = null,
+    scrollBehavior: TopAppBarScrollBehavior? = null,
     onBack: () -> Unit = {},
     onSettings: () -> Unit = {},
 ) {
-    TopAppBar(
-        title = {
-            Text(
-                text = destination.label,
-                style = MaterialTheme.typography.titleLarge,
-            )
-        },
+    LargeFlexibleTopAppBar(
+        title = { Text(text = destination.label) },
+        subtitle = subtitle?.let { { Text(text = it) } },
         navigationIcon = {
             IconButton(
                 onClick = onBack,
                 modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
             ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                     contentDescription = "Back",
                 )
             }
@@ -306,14 +314,15 @@ fun UnifiedTopBar(
                 modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Settings,
+                    imageVector = Icons.Rounded.Settings,
                     contentDescription = "Open settings",
                 )
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            containerColor = MaterialTheme.colorScheme.surface,
+            scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),
-        windowInsets = TopAppBarDefaults.windowInsets,
+        scrollBehavior = scrollBehavior,
     )
 }

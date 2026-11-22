@@ -1,94 +1,82 @@
 # Design System: Unified Stream Android
-**Project ID:** 0e3606fe-cab6-4bf2-baf8-c7b53fc38fee
+
+> **Status:** Material 3 Expressive. `design/Android.html` is the earlier baseline Material 3 presentation board. It is kept as history only and no longer describes the shipped app; this document is normative.
 
 ## 1. Visual Theme & Atmosphere
 
-Unified Stream Android is an expressive Material 3 companion experience for controlling camera, microphone, speaker, and PC connections. It feels calm, tactile, and mobile-native. Large tonal surfaces and generous rounding make technical streaming controls approachable, while live metrics and concise labels preserve the product’s professional character.
+Unified Stream Android is a Material 3 Expressive companion for controlling camera, microphone, speaker, and PC connections. It is built on `androidx.compose.material3` 1.5.0 with `MaterialExpressiveTheme`. The product keeps its identity colors (mint and teal on green-black or minted white) and lets Expressive supply the rest: spring motion, shape, and emphasized type.
 
-The atmosphere is softer and more spacious than the desktop client. Dark mode uses green-black surfaces with luminous mint accents; light mode uses clean, slightly green-tinted neutrals. Components should feel carved from neighboring tonal layers rather than floating as glass. Strong color is reserved for connection, activation, recording, and the principal action.
+The point of Expressive here is to make live state legible at a glance. Shape, motion, and progress style say what is happening (connecting, live, muted, failed) alongside color and text, never instead of them. Large rounded surfaces and generous spacing keep technical controls approachable; monospaced measurements keep the product's professional character.
 
-Motion communicates live state rather than decoration. Audio bars breathe, discovery and recording indicators pulse, and switches change shape and position with a quick Material-style transition. The camera viewfinder is the only intentionally immersive area; it uses a near-black field with restrained overlays so the video feed remains dominant.
+The camera viewfinder is the only intentionally immersive area. It uses a near-black field with restrained overlays so the video feed stays dominant.
 
 ## 2. Color Palette & Roles
 
+The palette is fixed. Dynamic (wallpaper) color is intentionally not used, because mint must always mean connected or live.
+
 ### Dark mode
 
-- **Deep Forest Surface (#0E1413):** Primary phone canvas and navigation foundation.
-- **Tonal Forest Container (#171D1C):** Standard cards, bottom navigation, and grouped settings.
-- **Raised Forest Container (#212827):** Audio wells, icon backgrounds, and nested control surfaces.
-- **Highest Forest Container (#2B3231):** Inactive tracks and maximum tonal elevation.
-- **Soft Porcelain Text (#DEE4E2):** Primary headings and body content.
-- **Sage-Gray Text (#9AA5A2):** Supporting descriptions, labels, and inactive navigation.
-- **Mineral Outline (#56605E):** Strong control outlines and switch borders.
-- **Quiet Outline (#3B4342):** Low-emphasis separators and container edges.
-- **Luminous Mint (#7AD7C6):** Primary actions, live indicators, active tracks, and progress.
-- **Deep Mint Ink (#00382F):** Text and icons placed on the luminous primary color.
-- **Teal Tonal Container (#005046):** Connected device hero cards and active icon containers.
-- **Pale Mint Content (#9DF1E0):** Text and symbols placed on deep teal containers.
-- **Muted Sage Container (#2C4B46):** Selected navigation and lower-priority highlighted information.
-- **Pale Sage Content (#CDE8E1):** Content placed on muted sage containers.
-- **Soft Error Coral (#FFB4AB):** Stop-camera and destructive streaming states.
-- **Canvas Night (#0A0D0D):** Presentation-board background outside the phone frames.
-- **Recording Coral (#FF5A4D):** Blinking live-recording dot in the viewfinder.
+- **Deep Forest Surface (#0E1413):** Screen background and app bar.
+- **Tonal Forest Container (#171D1C):** Stream cards, settings cards, scrolled app bar.
+- **Raised Forest Container (#212827):** Metric tiles, notices, nested surfaces.
+- **Highest Forest Container (#2B3231):** Inactive badges and tracks.
+- **Soft Porcelain Text (#DEE4E2)** and **Sage-Gray Text (#9AA5A2):** Primary and supporting text.
+- **Mineral Outline (#56605E)** and **Quiet Outline (#3B4342):** Strong and quiet outlines.
+- **Luminous Mint (#7AD7C6)** on **Deep Mint Ink (#00382F):** Primary actions, live badges, progress.
+- **Teal Tonal Container (#005046)** with **Pale Mint Content (#9DF1E0):** Connected hero and good-quality state.
+- **Muted Sage Container (#2C4B46)** with **Pale Sage Content (#CDE8E1):** Connecting and secondary highlights.
+- **Amber (#E4A339)** with container **#5B4300** and content **#FFDEA6:** Degraded link quality (tertiary role).
+- **Soft Error Coral (#FFB4AB)** with container **#93000A** and content **#FFDAD6:** Failed connection, refused streams, stop actions.
+- **Recording Coral (#FF5A4D):** The recording dot over the viewfinder.
 
 ### Light mode
 
-- **Minted White Surface (#F5FAF8):** Primary phone background.
-- **Soft Sage Container (#E9EFED):** Standard grouped cards and navigation.
-- **Raised Sage Container (#E3EAE8):** Nested controls and icon wells.
-- **Highest Sage Container (#DDE4E2):** Inactive tracks and elevated neutral areas.
-- **Forest Ink (#171D1B):** Primary text.
-- **Slate Sage Text (#3F4947):** Secondary labels and descriptions.
-- **Mineral Gray Outline (#6F7977):** Strong outlines.
-- **Pale Outline (#BFC9C6):** Quiet borders and separators.
-- **Grounded Teal (#00695F):** Primary actions and active states.
-- **Pure White Content (#FFFFFF):** Content placed on grounded teal.
-- **Pale Mint Container (#9DF1E0):** Selected and active tonal surfaces.
-- **Deep Teal Content (#00201C):** Text placed on pale mint.
-- **Pale Sage Selection (#CDE8E1):** Selected navigation and secondary highlights.
-- **Deep Forest Selection Text (#062019):** Content on pale sage selection surfaces.
-- **Material Error Red (#BA1A1A):** Destructive and stop states.
-- **Cool Page Mist (#EEF2F0):** Presentation-board background around phone frames.
+- **Minted White Surface (#F5FAF8)**, **Soft Sage Container (#E9EFED)**, **Raised Sage (#E3EAE8)**, **Highest Sage (#DDE4E2)**.
+- **Forest Ink (#171D1B)** and **Slate Sage Text (#3F4947)**.
+- **Grounded Teal (#00695F)** on white for primary; **Pale Mint (#9DF1E0)** on **Deep Teal (#00201C)** for primary containers.
+- **Pale Sage (#CDE8E1)** on **Deep Forest (#062019)** for secondary containers.
+- **Amber (#7B5800)** with container **#FFDEA6** and content **#271900** for degraded quality.
+- **Material Error Red (#BA1A1A)** with container **#FFDAD6** and content **#410002**.
 
-Use mint and teal to mean active, connected, discoverable, or progressing. Error coral or red is reserved for stopping an active capture or communicating a destructive action. Tonal elevation should do most of the grouping work; avoid unnecessary outlines around every card.
+Use mint and teal for active, connected, and progressing. Amber is for degraded. Error colors are reserved for failure and for stopping an active capture. Tonal elevation does the grouping; avoid outlines around cards.
 
 ## 3. Typography Rules
 
-Use **Roboto** throughout the Android experience to preserve native Material character. Use **JetBrains Mono** selectively for latency, bandwidth, packet loss, frame rate, battery usage, and other compact technical measurements.
+Roboto (the platform default) throughout, with **JetBrains Mono**, falling back to the system monospace, for latency, bandwidth, loss, jitter, resolution, ports, and identifiers.
 
-- Screen titles use Roboto at 22–30 pixels, regular to medium weight, with subtly tightened letter spacing.
-- Card and device titles use 15–16 pixels at medium weight.
-- Standard body copy and control labels use 12.5–15 pixels.
-- Supporting metadata uses 11–12.5 pixels and the sage-gray text color.
-- Live measurements use JetBrains Mono at 19–26 pixels for prominent values and 11–12 pixels for compact readouts.
-- Section labels use 12 pixels, uppercase, with approximately 0.08 em tracking.
-- Presentation-board labels use 12 pixels, uppercase, with approximately 0.10–0.16 em tracking.
+- Use Expressive emphasized roles for hierarchy: `headlineMediumEmphasized` for the connection hero, `titleLargeEmphasized` for card titles and metric values, `titleMediumEmphasized` for section headers and list item titles.
+- Body and supporting copy use `bodyMedium` and `bodySmall` in the on-surface-variant color.
+- Use sentence case for actions, labels, and headings. There are no uppercase tracked labels.
+- Every metric pairs with a plain-language label ("Latency", "Upload", "Loss", "Jitter").
 
-Use sentence case for actions and navigation. Keep technical descriptions short and scannable, such as “Opus 48 kHz” or “Wi-Fi 6 · 192.168.1.10.” Pair every metric with a plain-language label so the interface remains understandable outside engineering contexts.
+## 4. Shape & Motion
 
-## 4. Component Stylings
+- **Shapes:** Use the Expressive shape scale. Hero and viewfinder use `extraLargeIncreased`; stream, settings, and form cards use `extraLarge`; tiles, notices, and fields use `large`; chips, pills, and the search field are fully rounded.
+- **Shape as state:** the connection badge is a cookie when connected, a soft burst with an error icon on failure, and a clover when offline. While connecting or reconnecting it is a `ContainedLoadingIndicator`. Stream badges are a cookie when live and a circle when off.
+- **Motion scheme:** `MotionScheme.expressive()`. Color and level changes use the scheme's effects spec; toggle buttons, button groups, and list items use their built-in spring shape morphing.
+- **Reduced motion:** when the system animation scale is zero the wavy meters render flat and no continuous motion runs. The same states remain readable from shape, icon, and text.
 
-* **Buttons:** The primary extended action is 56 pixels high with comfortably rounded 18-pixel corners, a mint or grounded-teal fill, contrasting text, and a soft 6 by 18 pixel shadow at 22% black. Compact actions use 9–12 pixel corners; lightweight actions and filter chips may be pill-shaped. Destructive camera controls switch to the error color and can tighten their inner stop symbol to a squared shape.
-* **Cards/Containers:** Major streaming cards use expressive 26-pixel corners and tonal fills without outlines. Device rows use 22-pixel corners, settings groups use 24-pixel corners, and bottom sheets use 28-pixel top corners. Nested wells and status rows use 14–16 pixel corners. Elevation is primarily tonal and flat; reserve shadows for the floating primary action and phone frame.
-* **Inputs/Forms:** Material switches measure approximately 52 by 32 pixels and are fully pill-shaped. Active switches use the primary color with a 24-pixel contrasting thumb; inactive switches use the highest neutral container, a mineral border, and a smaller 16-pixel thumb. Segmented resolution controls share one pill-shaped outline, while frame-rate choices use separate 12-pixel rounded segments. Search fields are 52 pixels high and fully pill-shaped.
-* **Chips:** Selection chips use 8-pixel corners in dense cards and pill shapes over the camera viewfinder. Active choices receive a tonal mint or sage fill; inactive choices are transparent or outlined. Keep chip labels around 12.5 pixels and preserve comfortable horizontal padding.
-* **Navigation:** Bottom navigation is 78 pixels high. Each destination uses a 62 by 32 pixel pill indicator above a 12-pixel medium-weight label. The active destination receives a muted sage container and stronger foreground color; inactive destinations remain transparent and quiet.
-* **Camera Controls:** The viewfinder uses a dark neutral field with white overlays. Status and setting overlays sit on translucent black pills. The lower control sheet uses the normal surface palette, a small centered drag handle, large 56-pixel control targets, and grouped resolution and frame-rate choices.
-* **Telemetry and Progress:** Use monospaced values, mint progress tracks, and gently animated narrow audio bars. Battery, volume, and live-network values should favor simple bars and numbers over decorative charts.
+## 5. Component Stylings
 
-## 5. Layout Principles
+- **Top app bar:** `LargeFlexibleTopAppBar`, collapsing on scroll. Title is the destination; the subtitle is the live connection summary, so state is visible on every screen. Back and Settings are icon buttons with 48 dp targets and labels "Back" and "Open settings".
+- **Connection hero:** A single surface that changes container color with state (primary container connected, secondary container working, error container failed, neutral offline), holding the badge, a state word, the title, a detail line, and the "Find a computer" action when disconnected.
+- **Stream card:** Badge, title, status line, and an on/off `ToggleButton` whose shape morphs between states and which always carries the words "On", "Off", or "Starting". Stream controls sit beneath: wavy level meter, mute toggle, slider, and optional switch.
+- **Buttons:** Use the Expressive `shapes` variants so presses morph the shape. Start/Stop camera is a large button; Stop uses the error color pair. Secondary actions are tonal or outlined.
+- **Choices:** Resolution is a connected button group of toggle buttons with leading, middle, and trailing shapes and the radio-button role.
+- **Level meters:** `LinearWavyProgressIndicator`; amplitude is full while the stream is live and unmuted, flat otherwise.
+- **Lists:** Devices and appearance settings use `SegmentedListItem` with `ListItemDefaults.segmentedShapes`, so a group reads as one connected surface with rounded outer corners.
+- **Fields:** The search field is fully rounded with a leading search icon and a clear action; form fields use the `large` shape and inline error text.
+- **Switches:** Settings switches show a check glyph in the thumb when on.
+- **Quality pill:** Icon plus word (Good, Degraded, Poor, Unknown) on the matching container color.
+- **Camera viewfinder:** Near-black field in an `extraLargeIncreased` surface, a translucent pill for REC and one for the resolution in monospace.
 
-Design each Android screen for a 428 by 908 pixel phone frame. Use 16 pixels of horizontal inset for primary content and a vertical rhythm centered on 12–16 pixel gaps. Touch targets should be at least 40 pixels, preferably 48–56 pixels for primary controls.
+## 6. Layout Principles
 
-The Home screen follows a clear vertical sequence: compact app bar, large screen title, connected-host summary, camera card, microphone card, speaker card, extended primary action, then bottom navigation. The Camera screen dedicates its upper region to the viewfinder and anchors controls in a rounded bottom sheet. Devices uses a search field followed by network results, pairing options, and a contextual notice. Settings groups related switches inside large tonal containers, then places session battery information in a separate card.
+Use 16 dp of horizontal inset, 12 dp between cards, 20 dp inside cards, and 24 dp inside the hero. Touch targets are at least 48 dp; the large primary action is at least the Expressive large button height. Content scrolls under the collapsing app bar and keeps a 32 dp bottom inset. Text scales with the system font size without hiding actions.
 
-Maintain the following spatial behavior:
+Navigation is a stack with no bottom bar: Devices is the root, a connection advances to Home, "Open camera controls" pushes Camera, and Settings opens above the current screen from the app bar on every screen. Back pops one screen, or exits from Devices. Stream and session state are independent of navigation.
 
-- Use 12 pixels between related cards and 14–18 pixels inside containers.
-- Use larger 22–28 pixel gaps only when separating screen regions or presentation frames.
-- Align switch controls to the trailing edge and let label/description stacks occupy the flexible width.
-- Keep the primary streaming action near the lower-right area but above bottom navigation.
-- Keep bottom navigation stable across Home, Devices, and Settings.
-- Allow content to scroll vertically without shrinking type or touch targets.
-
-When presenting multiple screens on a design canvas, place the four phone frames—Home, Camera, Devices, and Settings—in a wrapping row with approximately 46 pixels between them. This presentation spacing is documentation-only; it must not be reproduced inside the mobile application itself.
+- **Home:** connection hero, network section (quality pill and four metric tiles), then camera, microphone, and speaker cards.
+- **Camera:** viewfinder, explanation notice, resolution group, facing toggle, start/stop action.
+- **Devices:** search, discovery status with a loading indicator, segmented device list, and a connect-by-address form when discovery is empty, blocked, or failed.
+- **Settings:** appearance, this phone (identity, session, disconnect or cancel reconnect), and transport diagnostics.
